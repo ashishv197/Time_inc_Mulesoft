@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mule xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:http="http://www.mulesoft.org/schema/mule/http"
+    xmlns:file="http://www.mulesoft.org/schema/mule/file"
+    xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+    xmlns:schedulers="http://www.mulesoft.org/schema/mule/schedulers"
+    xmlns:batch="http://www.mulesoft.org/schema/mule/batch"
+    xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc"
+    xmlns="http://www.mulesoft.org/schema/mule/core"
+    xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+    xmlns:spring="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/schedulers http://www.mulesoft.org/schema/mule/schedulers/current/mule-schedulers.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd">
+    <file:connector
+        name="VendorFileName"
+        outputPattern="#[flowVars.vendorFilename]"
+        autoDelete="true"
+        streaming="true"
+        validateConnections="true"
+        doc:name="File"
+        outputAppend="true" />
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <batch:job name="Main_Eloqua_Batch_Process">
+        <batch:input>
+            <poll doc:name="Poll (10 Minutes)">
+                <fixed-frequency-scheduler frequency="10" timeUnit="MINUTES"/>
+                <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT ACCNO__c,ACCOUNT_ID__c,AFFILFLG__c,AFFILIAT__c,BANKACC__c,BANKNAME__c,ErrorCode__c,ErrorDescription__c,BANKSORT__c,BUNDIFF__c,BUNFLAG__c,Bounced_Email__c,CCCFLAG__c,COMMID__c,CONTACT_ID__c,COPIES__c,COSTPERISSUE__c,CURRCODE__c,CURRPROMOTYPE__c,CUSTREF__c,Comms_Type__c,DISC1__c,DISC2__c,DISC3__c,DISC6__c,DISCD__c,DSPADD1__c,DSPADD2__c,DSPCNTY__c,DSPCOMP__c,DSPCTRY__c,DSPDEPT__c,DSPEMAIL__c,DSPFNAME__c,DSPJOB__c,DSPPCODE__c,DSPSALUTATION__c,DSPSNAME__c,DSPTITLE__c,DSPTOWN__c,ENDISS__c,FULL1__c,FULL2__c,FULL3__c,FULL6__c,FULLD__c,GIFTDESC__c,GIFTFLAG__c,GIFTQTY__c,INVADD1__c,INVADD2__c,INVCNTY__c,INVCOMP__c,INVCTRY__c,INVDEPT__c,INVEMAIL__c,INVFNAME__c,INVJOB__c,INVNO__c,INVPCODE__c,INVSALUTATION__c,INVSNAME__c,INVTITLE__c,INVTOWN__c,ISSREM__c,ISSUES1__c,ISSUES2__c,ISSUES3__c,ISSUES6__c,ISSUESD__c,JRNLCODE__c,LETCODE__c,MAILTO__c,MINTERM__c,NXTAMT__c,NXTDATE__c,NXTFREQ__c,NXTISS__c,OFFER1__c,OFFER2__c,OFFER3__c,OFFER6__c,OFFERD__c,OFFERFREQ__c,PAYAMT__c,PAYDATE__c,PAYFREQ__c,PAYISS__c,PERCENTDISC__c,PROMCODE__c,PUBPRIV__c,Payment_info_suppressed__c,RENCODE__c,RENEWALSALEDATE__c,RENIDENT__c,RENNUM__c,REPLYDAT__c,REQEMAIL__c,REQTEL__c,SAVE1__c,SAVE2__c,SAVE3__c,SAVE6__c,SAVED__c,SEGMENTCODE__c,SIGCODE__c,SIZEFLAG__c,STARTISSUESALEDATE__c,STARTISS__c,TPPRIV__c,VATAMT__c,VATNO__c,X4X_CUST__c,OFFERCCC__c,OFFERCCCFREQ__c,OFFER1GIFT__c,OFFER2GIFT__c,OFFER3GIFT__c,OFFER6GIFT__c,OFFERDGIFT__c,OFFERCCCGIFT__c,FULLCCC__c,INVPHONE__c,DSPPHONE__c,DISCCCC__c,SaveCCC__c FROM Marketing_Communication_Items_Temp__c WHERE Comms_Type__c = '${file.eloquaIdentifier}'" doc:name="Salesforce"/>
+            </poll>
+            <set-session-variable variableName="fileName" value="Salesforce_To_File_#[function:datestamp].csv" doc:name="Set File Name"/>
+
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Write_To_File_Batch_Step">
+                <batch:commit
+                    
+                    doc:name="Batch Commit" streaming="true">
+                    <dw:transform-message doc:name="Transform Message">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv
+---
+payload]]></dw:set-payload>
+                    </dw:transform-message>
+                    <file:outbound-endpoint
+                        path="/tmp"
+                        outputPattern="#[sessionVars.fileName]"
+                        connector-ref="VendorFileName"
+                        responseTimeout="10000"
+                        doc:name="File" />
+                </batch:commit>
+            </batch:step>
+            <batch:step name="FTP_To_Vendor">
+                <batch:commit streaming="true" doc:name="Batch Commit">
+                    <dw:transform-message doc:name="Transform Message">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv
+---
+payload]]></dw:set-payload>
+                    </dw:transform-message>
+                    <sftp:outbound-endpoint exchange-pattern="one-way" host="localhost" port="22" responseTimeout="10000" doc:name="SFTP"/>
+                </batch:commit>
+            </batch:step>
+            <batch:step name="Batch_Step1">
+                <batch:commit size="1000" doc:name="Batch Commit">
+                    <dw:transform-message doc:name="Transform Message">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv
+---
+payload.ACCOUNT_ID__c]]></dw:set-payload>
+                    </dw:transform-message>
+                    <sfdc:update config-ref="Salesforce__Basic_Authentication" type="Marketing_Communication_Items_Temp__c" doc:name="Update Salesforce">
+                        <sfdc:objects ref="#[payload]"/>
+                    </sfdc:update>
+                </batch:commit>
+            </batch:step>
+            <batch:step name="HandleFailures" accept-policy="ONLY_FAILURES">
+                <logger message="#[payload] Failed " level="INFO" doc:name="Logger"/>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger message="#[payload.loadedRecords] Loaded Records #[payload.failedRecords] Failed Records" level="INFO" doc:name="Log Result"/>
+        </batch:on-complete>
+    </batch:job>
+    <sub-flow name="getSFTPDetails">
+        <sfdc:query
+            config-ref="Salesforce__Basic_Authentication"
+            query="dsql:SELECT Id,SFTP_Path__c,Formatted_Username__c,Formatted_Password__c,SFTP_Server_IP__c FROM Vendor_Details__c WHERE is_Active__c = true AND Name = '${file.VendorName}' LIMIT 1"
+            doc:name="Salesforce" />
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload]]></dw:set-payload>
+        </dw:transform-message>
+    </sub-flow>
+</mule>
