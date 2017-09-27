@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <flow name="Copy_of_helloworldFlow" initialState="started">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/hello/time1" allowedMethods=" POST" doc:name="Copy_of_HTTP">
+            <http:response-builder statusCode="201">
+                <http:header headerName="location" value="http://api.uber.com/trip/#[message.outboundProperties.id]"/>
+            </http:response-builder>
+        </http:listener>
+        <logger message="#[payload]" level="INFO" doc:name="Copy_of_read request body"/>
+        <logger message="#[message.inboundProperties.'myheader']           #[message.inboundProperties.accept]  #[message.outboundProperties.prop2='prop2']" level="INFO" doc:name="Copy_of_read IB props"/>
+        <set-property propertyName="myobprop" value="new Date()" doc:name="Copy_of_Property"/>
+        <set-payload value="#[payload.length().toString()]" doc:name="Copy_of_Set Payload"/>
+        <logger message="#[app.standalone] #[message.outboundProperties.id='Hi']   #[message.outboundProperties.id2=message.outboundProperties.id] #[payload]" level="INFO" doc:name="Copy_of_Logger"/>
+        <catch-exception-strategy doc:name="Copy_of_Catch Exception Strategy">
+            <logger message="which exception was raised =&gt;.   #[exception]" level="INFO" doc:name="Copy_of_Logger"/>
+        </catch-exception-strategy>
+    </flow>
+</mule>
