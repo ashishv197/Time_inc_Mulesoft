@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw"
+	xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns="http://www.mulesoft.org/schema/mule/core"
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd">
+
+	
+	<flow name="timeinc-replacement_flowFlow">
+		<poll doc:name="Poll">
+			<fixed-frequency-scheduler frequency="1000"
+				timeUnit="DAYS" />
+			<sfdc:query config-ref="Salesforce__Basic_Authentication_Gifts"
+				query="dsql:SELECT Id,MS_Magazine_Number__c,MS_QSS_Reference_Number__c,Zuora_Subscription_Name__c,MS_ContactNameDetails__c,MS_ContactMailingStreet__c,MS_ContactMailingAddDetails__c,Despatch_Method__c,Quantity__c,MS_PublicationName__c,Journal_Short_Name__c,Insert_Name__c,Reader_Type__c,MS_StatusToUpdate__c,Status__c FROM Issue_Schedule__c WHERE Status__c = '${sfdc.replacedStatus}' AND Type__c = '${sfdc.replacementtype}' limit 10"
+				doc:name="Salesforce" />
+		</poll>
+        <enricher target="#[flowVars.vendorDetails]" doc:name="Message Enricher">
+            <flow-ref name="getVendorDetails" doc:name="getVendorDetails"/>
+        </enricher>
+		<dw:transform-message doc:name="Transform Message">
+			<dw:set-payload><![CDATA[%dw 1.0
+
+%output application/csv separator=",", quoteValues=true
+---
+//Set new line character
+payload map ((payload01 , indexOfPayload01) ->{
+                Id: payload01.Id,
+                MS_Magazine_Number__c: payload01.MS_Magazine_Number__c,
+                MS_QSS_Reference_Number__c: trim payload01.MS_QSS_Reference_Number__c when payload01.MS_QSS_Reference_Number__c != null otherwise '',
+                Zuora_Subscription_Name__c: payload01.Zuora_Subscription_Name__c[3.. -1] when payload01.Zuora_Subscription_Name__c != null otherwise '', //.substring(2,payload01.Zuora_Subscription_Name__c.size()-1),
+                Cont_Last_Name: (payload01.MS_ContactNameDetails__c splitBy "#")[0] ,
+                Cont_First_Name: (payload01.MS_ContactNameDetails__c splitBy "#")[1] ,
+                Cont_Salutation: (payload01.MS_ContactNameDetails__c splitBy "#")[2] ,
+                ReaderLocation: (payload01.MS_ContactNameDetails__c splitBy "#")[3] ,
+                Cont_Department: (payload01.MS_ContactNameDetails__c splitBy "#")[4] ,
+                Cont_Title: (payload01.MS_ContactNameDetails__c splitBy "#")[5] ,
+                Cont_Acc_Name: (payload01.MS_ContactNameDetails__c splitBy "#")[6] ,
+                Cont_Mail_Street_0: (payload01.MS_ContactMailingStreet__c splitBy "\n")[0],
+                Cont_Mail_Street_1: (payload01.MS_ContactMailingStreet__c splitBy "\n")[1],
+                Cont_Mail_Street_2: (payload01.MS_ContactMailingStreet__c splitBy "\n")[2],
+                Cont_Mail_City: ((payload01.MS_ContactMailingStreet__c splitBy "\n")[3]+','+(payload01.MS_ContactMailingAddDetails__c splitBy "#:#")[0]).replace("\n",", "),
+                Cont_Mail_State: (payload01.MS_ContactMailingAddDetails__c splitBy "#:#")[1],
+                Cont_Mail_Country: (payload01.MS_ContactMailingAddDetails__c splitBy "#:#")[2],
+                Cont_Mail_PostalCode: (payload01.MS_ContactMailingAddDetails__c splitBy "#:#")[3],
+                Despatch_Method__c: payload01.Despatch_Method__c,
+                Quantity: payload01.Quantity__c,
+                Carrier_Sheet:'',
+                Reference:'',
+                MS_PublicationName__c: payload01.MS_PublicationName__c,
+                VAT_Number:'',
+                Version:'',
+                Grace_Copy:'',
+                Journal_Short_Name__c: payload01.Journal_Short_Name__c,
+                Insert_Name__c: payload01.Insert_Name__c,
+                Reader_Type__c: payload01.Reader_Type__c,
+                Presstream_Type:'',
+                Presstream_SSC:'',
+                Breaker:'',
+                Cover_Date__c: payload01.Cover_Date__c
+})
+
+]]></dw:set-payload>
+		</dw:transform-message>
+        <enricher target="#[flowVars.sftpResponse]" doc:name="Message Enricher">
+            <sftp:outbound-endpoint exchange-pattern="request-response" connector-ref="SFTP_giftsReplacement_Connector" outputPattern="test_replacement_#[server.dateTime.format(${file.timeStampPattern})].txt" host="#[flowVars.vendorDetails.get(0).host]" port="22" path="#[flowVars.vendorDetails.get(0).path]" user="#[flowVars.vendorDetails.get(0).user]" password="#[flowVars.vendorDetails.get(0).pwd]" responseTimeout="10000" doc:name="SFTP_Outbound_Connection"/>
+
+        </enricher>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map {
+	Id: $.Id,
+	Status__c: "Fulfilled"
+	
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <sfdc:update config-ref="Salesforce__Basic_Authentication_Gifts" type="Issue_Schedule__c" doc:name="Salesforce">
+            <sfdc:objects ref="#[payload]"/>
+        </sfdc:update>
+
+        <catch-exception-strategy doc:name="Catch Exception Strategy">
+            <logger message="?? Failed to process:: #[exception]" level="INFO" doc:name="Logger"/>
+            <set-payload value="${smtp.errorBody} #[exception.cause.message]" doc:name="Set Payload"/>
+            <dw:transform-message doc:name="Transform Message">
+                <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.toAddressreplacement'),
+	cc_adresses__c: p('smtp.ccAddress'),
+	bcc_addresses__c: p('smtp.bccAddress'),
+	Email_Body__c: payload,
+	Email_Subject__c: p('file.ReplacementvendorName') ++ ' has not been processed Successfully  | ' ++ p('env.name')
+	
+}]]></dw:set-payload>
+            </dw:transform-message>
+            <sfdc:update-single config-ref="Salesforce__Basic_Authentication_Gifts" type="Mule_Email__c" doc:name="Salesforce"/>
+        </catch-exception-strategy>
+	</flow>
+    <sub-flow name="getVendorDetails">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication_Gifts" query="dsql:SELECT Id,SFTP_Path__c,Formatted_Username__c,Formatted_Password__c,SFTP_Server_IP__c FROM Vendor_Details__c WHERE is_Active__c = true AND Name = 'LabelReport-Replacement'" doc:name="Salesforce"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map {
+	host : $.SFTP_Server_IP__c,
+	port : "22",
+	path : $.SFTP_Path__c,
+	user : $.Formatted_Username__c,
+	pwd: $.Formatted_Password__c
+}]]></dw:set-payload>
+            <dw:set-variable variableName="sftpDetails"><![CDATA[%dw 1.0
+%output application/java
+---
+payload map {
+	host : $.SFTP_Server_IP__c,
+	port : "22",
+	path : $.SFTP_Path__c,
+	user : $.Formatted_Username__c,
+	pwd: $.Formatted_Password__c
+}]]></dw:set-variable>
+        </dw:transform-message>
+    </sub-flow>
+</mule>

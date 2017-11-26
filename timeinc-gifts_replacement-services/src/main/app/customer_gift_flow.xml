@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp" xmlns:imap="http://www.mulesoft.org/schema/mule/imap" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/imap http://www.mulesoft.org/schema/mule/imap/current/mule-imap.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd">
+    <file:connector name="VendorFileName" outputPattern="#[flowVars.VendorFileName]" autoDelete="false" outputAppend="true" streaming="true" validateConnections="true" doc:name="File" writeToDirectory="C:\Users\vermaa\Desktop"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8081" doc:name="HTTP Listener Configuration"/>
+    <batch:job name="Customergift_Batch_Process">
+        <batch:input>
+            <poll doc:name="Poll">
+                <fixed-frequency-scheduler frequency="1" timeUnit="DAYS" />
+                <sfdc:query config-ref="Salesforce__Basic_Authentication_Gifts" query="dsql:Select Id,Customer_Contact__r.Name,Shipped_Date__c,Vendor__c,Gift_Status__c,Promotion__r.Name,Promotion__r.Publication__r.Name,Subscription__r.Name,Subscription__r.Publication__c,Subscription__r.Quote__r.Publication__r.Magazine_Number__c,Gift_Variant__r.Gift__r.Vendor__c,CreatedDate,Customer_Contact__r.MailingStreet,Customer_Contact__r.MailingCity,Customer_Contact__r.MailingState,Customer_Contact__r.MailingCountry,Customer_Contact__r.MailingPostalCode,Customer_Contact__r.FirstName,Customer_Contact__r.LastName,Customer_Contact__r.Salutation,Customer_Contact__r.Email,Customer_Contact__r.Phone,Customer_Contact__r.Title,Gift_Variant__r.Name,Gift_Variant__r.Gift__r.Name,Gift_code__c,Gift_Type__c,Gift_Variant__r.Description__c,GiftCodeAndDescription__c From Customer_Gift__c Where Subscription__c &lt;&gt; null And Gift_Status__c = '${sfdc.customerGiftStatus}' " doc:name="Salesforce"/>
+            </poll>
+            <enricher  target="#[flowVars.TIUKSFTPDetails]" doc:name="Message Enricher" source="#[org.apache.commons.collections.IteratorUtils.toList(payload)]">
+                <flow-ref name="GetTIUK_Gift_SFTPdetails" doc:name="GetTIUK_Gift_SFTPdetails"/>
+            </enricher>
+            <set-variable variableName="TIUK_GiftFile_name" value="GiftLabelReport_${file.TIUKgiftvendor}_#[server.dateTime.format(${file.timeStampPattern})]" doc:name="TIUK File name"/>
+            <enricher  target="#[flowVars.MRMSFTPDetails]" doc:name="Message Enricher" source="#[org.apache.commons.collections.IteratorUtils.toList(payload)]">
+                <flow-ref name="GetMRM_SFTPdetails" doc:name="GetMRM_SFTPdetails"/>
+            </enricher>
+            <set-variable variableName="MRM_GiftFile_name" value="GiftLabelReport_${file.MRMgiftvendor}_#[server.dateTime.format(${file.timeStampPattern})]" doc:name="MRM File name"/>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Write_To_SFTP_MRM" accept-expression="#[payload.Vendor__c=='MRM']">
+                <batch:commit streaming="true" doc:name="Batch Commit">
+                    <dw:transform-message doc:name="Transform Message" metadata:id="c7d76994-6a87-4352-a56b-2d83ad4b2162">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	ID: payload01.Id,
+	Title: payload01.Customer_Contact__r.Title,
+	Customer_first_name: payload01.Customer_Contact__r.FirstName,
+	LastName: payload01.Customer_Contact__r.LastName,
+	Name: payload01.Customer_Contact__r.Name,
+	Gift_variant_name: payload01.Gift_Variant__r.Gift__r.Name,
+	Gift_Status: payload01.Gift_Status__c,
+	Publication: payload01.Subscription__r.Publication__c,
+	JCode: payload01.Subscription__r.Quote__r.Publication__r.Magazine_Number__c,
+	Promotion: payload01.Promotion__r.Name,
+	GiftCode: payload01.Gift_code__c,
+	Subscription: payload01.Subscription__r.Name,
+	CreatedDate: payload01.CreatedDate,
+	Address: payload01.Customer_Contact__r.MailingStreet replace /(\r?\n)/ with " " ,
+	//Address: "test\,Test",
+	City: payload01.Customer_Contact__r.MailingCity,
+	State: payload01.Customer_Contact__r.MailingState,
+	Country: payload01.Customer_Contact__r.MailingCountry,
+	Zip: payload01.Customer_Contact__r.MailingPostalCode,
+	Email: payload01.Customer_Contact__r.Email,
+	Phone: payload01.Customer_Contact__r.Phone,
+	Gift_Type: payload01.Gift_Type__c,
+	Vendor: payload01.Vendor__c
+	}) ]]></dw:set-payload>
+                    </dw:transform-message>
+                    <sftp:outbound-endpoint exchange-pattern="one-way" connector-ref="SFTP_giftsReplacement_Connector" outputPattern="#[flowVars.MRM_GiftFile_name].csv" host="#[flowVars.MRMSFTPDetails.get(0).SFTP_Server_IP__c]" port="${sftp.port}" path="#[flowVars.MRMSFTPDetails.get(0).SFTP_Path__c]" user="#[flowVars.MRMSFTPDetails.get(0).Formatted_Username__c]" password="#[flowVars.MRMSFTPDetails.get(0).Formatted_Password__c]" responseTimeout="10000" doc:name="SFTP"/>
+
+                </batch:commit>
+            </batch:step>
+            <batch:step name="Write_To_SFTP_TIUK" accept-expression="#[payload.Vendor__c=='TIUK Gifts']">
+                <batch:commit streaming="true" doc:name="Batch Commit">
+                    <dw:transform-message doc:name="Transform Message">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	ID: payload01.Id,
+	Title: payload01.Customer_Contact__r.Title,
+	Customer_first_name: payload01.Customer_Contact__r.FirstName,
+	LastName: payload01.Customer_Contact__r.LastName,
+	Name: payload01.Customer_Contact__r.Name,
+	Gift_variant_name: payload01.Gift_Variant__r.Gift__r.Name,
+	Gift_Status: payload01.Gift_Status__c,
+	Publication: payload01.Subscription__r.Publication__c,
+	JCode: payload01.Subscription__r.Quote__r.Publication__r.Magazine_Number__c,
+	Promotion: payload01.Promotion__r.Name,
+	GiftCode: payload01.Gift_code__c,
+	Subscription: payload01.Subscription__r.Name,
+	CreatedDate: payload01.CreatedDate,
+	Address: payload01.Customer_Contact__r.MailingStreet replace /(\r?\n)/ with " " ,
+	//Address: "test\,Test",
+	City: payload01.Customer_Contact__r.MailingCity,
+	State: payload01.Customer_Contact__r.MailingState,
+	Country: payload01.Customer_Contact__r.MailingCountry,
+	Zip: payload01.Customer_Contact__r.MailingPostalCode,
+	Email: payload01.Customer_Contact__r.Email,
+	Phone: payload01.Customer_Contact__r.Phone,
+	Gift_Type: payload01.Gift_Type__c,
+	Vendor: payload01.Vendor__c
+	}) ]]></dw:set-payload>
+                    </dw:transform-message>
+                    <sftp:outbound-endpoint exchange-pattern="one-way" connector-ref="SFTP_giftsReplacement_Connector" outputPattern="#[flowVars.TIUK_GiftFile_name].csv" host="#[flowVars.TIUKSFTPDetails.get(0).SFTP_Server_IP__c]" port="${sftp.port}" path="#[flowVars.TIUKSFTPDetails.get(0).SFTP_Path__c]" user="#[flowVars.TIUKSFTPDetails.get(0).Formatted_Username__c]" password="#[flowVars.TIUKSFTPDetails.get(0).Formatted_Password__c]" responseTimeout="10000" doc:name="SFTP"/>
+
+                </batch:commit>
+            </batch:step>
+            <batch:step name="Update_Salesforce">
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:input-payload doc:sample="sample_data\Customer_Gift__c_3.dwl"/>
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	Id: payload.Id,
+	Gift_Status__c: "Shipped"
+	//GiftCodeAndDescription__c: payload.Gift_code__c ++ "###" ++ payload.Gift_Variant__r.Description__c as :string
+}]]></dw:set-payload>
+                </dw:transform-message>
+                <batch:commit size="198" doc:name="Batch Commit">
+                    <sfdc:update config-ref="Salesforce__Basic_Authentication_Gifts" type="Customer_Gift__c" doc:name="Salesforce">
+                        <sfdc:objects ref="#[payload]"/>
+                    </sfdc:update>
+                </batch:commit>
+            </batch:step>
+
+
+
+        </batch:process-records>
+        <batch:on-complete>
+            <choice doc:name="Choice">
+                <when expression="#[payload.loadedRecords &gt;0 &amp;&amp; payload.failedRecords == 0]">
+                    <set-payload value="${smtp.GiftsuccessBody} File = #[flowVars.GiftFile_name]. ${msg.recordProcessedMsg} = #[payload.successfulRecords] out of #[payload.totalRecords]" doc:name="Success Email"/>
+                    <dw:transform-message doc:name="Transform Message">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.toAddresscustomer_gift'),
+	cc_adresses__c: p('smtp.ccAddress'),
+	bcc_addresses__c: p('smtp.bccAddress'),
+	Email_Body__c: payload,
+	Email_Subject__c: p('file.CustomergiftprocessName') ++ 'Process Successfully completed | ' ++ p('env.name')
+	
+}]]></dw:set-payload>
+                    </dw:transform-message>
+                    <sfdc:create-single config-ref="Salesforce__Basic_Authentication_Gifts" type="Mule_Email__c" doc:name="Salesforce"/>
+                </when>
+                <when expression="#[payload.loadedRecords == 0]">
+                    <set-payload value="${msg.NoRecsFound}  | ${env.name} on #[server.dateTime.format(${file.emailTimeStamp})]" doc:name="No records Found"/>
+                    <dw:transform-message doc:name="Transform Message">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.toAddresscustomer_gift'),
+	cc_adresses__c: p('smtp.ccAddress'),
+	bcc_addresses__c: p('smtp.bccAddress'),
+	Email_Body__c: payload,
+	Email_Subject__c: p('msg.NoRecsFound') ++ 'for' ++ p('file.CustomergiftprocessName') ++ ' | ' ++ p('env.name')
+}]]></dw:set-payload>
+                    </dw:transform-message>
+                    <sfdc:create-single config-ref="Salesforce__Basic_Authentication_Gifts" type="Mule_Email__c" doc:name="Salesforce"/>
+                </when>
+                <otherwise>
+                    <logger message="$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$" level="INFO" doc:name="Logger"/>
+                </otherwise>
+            </choice>
+
+
+        </batch:on-complete>
+    </batch:job>
+
+    <flow name="CustomergiftBatch_flow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/Gifts" allowedMethods="POST" doc:name="HTTP"/>
+        <flow-ref name="CustomergiftBatch_flow" doc:name="CustomergiftBatch_flow"/>
+    </flow>
+
+    <sub-flow name="GetTIUK_Gift_SFTPdetails">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication_Gifts" query="dsql:SELECT Id,SFTP_Path__c,Formatted_Username__c,Formatted_Password__c,SFTP_Server_IP__c FROM Vendor_Details__c WHERE is_Active__c = true AND Name = 'TIUK Gifts' " doc:name="Query TIUKGift vendor details"/>
+    </sub-flow>
+    <sub-flow name="GetMRM_SFTPdetails">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication_Gifts" query="dsql:SELECT Id,SFTP_Path__c,Formatted_Username__c,Formatted_Password__c,SFTP_Server_IP__c FROM Vendor_Details__c WHERE is_Active__c = true AND Name = 'MRM'" doc:name="Query MRM vendor details"/>
+    </sub-flow>
+</mule>

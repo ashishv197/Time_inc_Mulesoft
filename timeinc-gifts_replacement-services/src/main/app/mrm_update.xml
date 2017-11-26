@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:context="http://www.springframework.org/schema/context" xmlns:quartz="http://www.mulesoft.org/schema/mule/quartz" xmlns:wmq="http://www.mulesoft.org/schema/mule/ee/wmq" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/wmq http://www.mulesoft.org/schema/mule/ee/wmq/current/mule-wmq-ee.xsd
+http://www.mulesoft.org/schema/mule/quartz http://www.mulesoft.org/schema/mule/quartz/current/mule-quartz.xsd
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd">
+    <sftp:connector name="SFTP_Connector" validateConnections="true" doc:name="SFTP" autoDelete="false"/>
+    <sftp:endpoint exchange-pattern="request-response" connector-ref="SFTP_Connector" host="ftransfer.timeinc.com" port="22" path="01Esco/TestMRM" user="Esco" password="Esco2015" name="SFTP_Endpoint" responseTimeout="10000" doc:name="SFTP"/>
+
+    <flow name="time_inc_mrm_updateflow">
+        <quartz:inbound-endpoint jobName="testJob" cronExpression="0 0/2 * 1/1 * ? *" repeatInterval="0" responseTimeout="10000" doc:name="Quartz">
+            <quartz:endpoint-polling-job>
+                <quartz:job-endpoint ref="SFTP_Endpoint"/>
+            </quartz:endpoint-polling-job>
+        </quartz:inbound-endpoint>
+        <dw:transform-message doc:name="Transform Message" metadata:id="aa171cd3-85ca-41a8-8a98-3df718a987a0">
+            <dw:input-payload mimeType="application/csv"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	ID: payload01.ID,
+	GiftCode: payload01.GiftCode,
+	SubscriptionID: payload01.SubscriptionID,
+	MRMOrderID: payload01.MRMOrderID,
+	MRMProductCode: payload01.MRMProductCode,
+	OrderDate: payload01.OrderDate,
+	ActionCode: payload01.ActionCode,
+	ActionDate: payload01.ActionDate
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <enricher target="#[flowVars.sftpOutbound]" doc:name="Message Enricher">
+            <sftp:outbound-endpoint exchange-pattern="request-response" outputPattern="MRMfile_#[server.dateTime.format(${file.timeStampPattern})].csv" host="ftransfer.timeinc.com" port="22" path="test account/TestMRMResponse" user="atandon" password="class2016" responseTimeout="10000" doc:name="SFTP_Outbound"/>
+        </enricher>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map {
+	Id: payload.ID,
+	Gift_Status__c: "dispatched",
+	MRMProductCode__c: payload.MRMProductCode,
+	MRMOrderID__c: payload.MRMOrderID
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <foreach doc:name="For Each">
+            <sfdc:update-single config-ref="Salesforce__Basic_Authentication_Gifts" type="Customer_Gift__c" doc:name="Salesforce"/>
+        </foreach>
+
+        <logger message="########## #[payload]" level="INFO" doc:name="Logger"/>
+
+    </flow>
+
+
+    <sub-flow name="QueryVendordetails">
+        <sfdc:query-single config-ref="Salesforce__Basic_Authentication_Gifts" query="dsql:SELECT Id,Name,SFTP_Path__c,Formatted_Username__c,Formatted_Password__c,SFTP_Server_IP__c FROM Vendor_Details__c WHERE is_Active__c = true AND ID = 'a1ib000000Ljpoq'" doc:name="Salesforce"/>
+    </sub-flow>
+
+</mule>

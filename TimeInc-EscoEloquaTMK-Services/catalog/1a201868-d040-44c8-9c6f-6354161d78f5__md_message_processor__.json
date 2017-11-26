@@ -1,0 +1,11 @@
+{
+    "inputMessageMetadata": {},
+    "outputMessageMetadata": {
+        "messagePayload": {
+            "connectorName": "Salesforce__Basic_Authentication",
+            "typeId": "Mule_Email__c"
+        }
+    },
+    "id": "1a201868-d040-44c8-9c6f-6354161d78f5",
+    "version": "5.2.0.0"
+}

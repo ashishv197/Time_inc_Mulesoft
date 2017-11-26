@@ -1,0 +1,25 @@
+{
+    "inputMessageMetadata": {
+        "flowVariables": {
+            "recordsToBeUpdated": {
+                "connectorName": "Salesforce__Basic_Authentication",
+                "typeId": "Marketing_Communication_Items_Temp__c"
+            }
+        }
+    },
+    "outputMessageMetadata": {
+        "messagePayload": {
+            "model": {
+                "connectorName": "#_custom_mule_metadata_type_#",
+                "typeId": "String"
+            },
+            "isArray": false,
+            "dataType": "LIST",
+            "metaDataModelPropertiesManager": {
+                "properties": []
+            }
+        }
+    },
+    "id": "a9ae17d2-06c3-4d58-aa06-d5375b9f47a4",
+    "version": "5.2.0.0"
+}

@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:smtp="http://www.mulesoft.org/schema/mule/smtp" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/smtp http://www.mulesoft.org/schema/mule/smtp/current/mule-smtp.xsd">
+    <batch:job name="Esco_Batch_Process" block-size="1000">
+        <batch:input>
+            <poll doc:name="Poll">
+                <fixed-frequency-scheduler frequency="1" timeUnit="DAYS"/>
+                <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT Id,ACCNO__c,ACCOUNT_ID__c,AFFILFLG__c,AFFILIAT__c,BANKACC__c,ErrorCode__c,ErrorDescription__c,BANKNAME__c,BANKSORT__c,BUNDIFF__c,BUNFLAG__c,Bounced_Email__c,CCCFLAG__c,COMMID__c,CONTACT_ID__c,COPIES__c,COSTPERISSUE__c,CURRCODE__c,CURRPROMOTYPE__c,CUSTREF__c,Comms_Type__c,DISC1__c,DISC2__c,DISC3__c,DISC6__c,DISCD__c,DSPADD1__c,DSPADD2__c,DSPCNTY__c,DSPCOMP__c,DSPCTRY__c,DSPDEPT__c,DSPEMAIL__c,DSPFNAME__c,DSPJOB__c,DSPPCODE__c,DSPSALUTATION__c,DSPSNAME__c,DSPTITLE__c,DSPTOWN__c,ENDISS__c,FULL1__c,FULL2__c,FULL3__c,FULL6__c,FULLD__c,GIFTDESC__c,GIFTFLAG__c,GIFTQTY__c,INVADD1__c,INVADD2__c,INVCNTY__c,INVCOMP__c,INVCTRY__c,INVDEPT__c,INVEMAIL__c,INVFNAME__c,INVJOB__c,INVNO__c,INVPCODE__c,INVSALUTATION__c,INVSNAME__c,INVTITLE__c,INVTOWN__c,ISSREM__c,ISSUES1__c,ISSUES2__c,ISSUES3__c,ISSUES6__c,ISSUESD__c,JRNLCODE__c,LETCODE__c,MAILTO__c,MINTERM__c,NXTAMT__c,NXTDATE__c,NXTFREQ__c,NXTISS__c,OFFER1__c,OFFER2__c,OFFER3__c,OFFER6__c,OFFERD__c,OFFERFREQ__c,PAYAMT__c,PAYDATE__c,PAYFREQ__c,PAYISS__c,PERCENTDISC__c,PROMCODE__c,PUBPRIV__c,Payment_info_suppressed__c,RENCODE__c,RENEWALSALEDATE__c,RENIDENT__c,RENNUM__c,REPLYDAT__c,REQEMAIL__c,REQTEL__c,SAVE1__c,SAVE2__c,SAVE3__c,SAVE6__c,SAVED__c,SEGMENTCODE__c,SIGCODE__c,SIZEFLAG__c,STARTISSUESALEDATE__c,STARTISS__c,TPPRIV__c,VATAMT__c,VATNO__c,X4X_CUST__c,OFFERCCC__c,OFFERCCCFREQ__c,OFFER1GIFT__c,OFFER2GIFT__c,OFFER3GIFT__c,OFFER6GIFT__c,OFFERDGIFT__c,OFFERCCCGIFT__c,FULLCCC__c,INVPHONE__c,DSPPHONE__c,DISCCCC__c,SaveCCC__c FROM Marketing_Communication_Items_Temp__c WHERE Comms_Type__c = '${file.escoIdentifier}'" doc:name="Salesforce" fetchSize="1000"/>
+            </poll>
+            <enricher source="#[org.apache.commons.collections.IteratorUtils.toList(payload)]" target="#[flowVars.EscoSFTPDetails]" doc:name="Message Enricher">
+                <flow-ref name="getEscoSFTPDetails" doc:name="getEscoSFTPDetails"/>
+            </enricher>
+            <set-variable variableName="escoFileName" value="test${file.escoVendorName}-#[server.dateTime.format(${file.timeStampPattern})].csv" doc:name="Esco File Name"/>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Write_To_File_Batch_Step">
+                <batch:commit streaming="true" doc:name="Batch Commit">
+                    <dw:transform-message doc:name="Transform Message">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	JRNLCODE: payload01.JRNLCODE__c,
+	SEGMENTCODE: payload01.SEGMENTCODE__c,
+	RENIDENT: payload01.RENIDENT__c,
+	RENNUM: payload01.RENNUM__c,
+	LETCODE: payload01.LETCODE__c,
+	MAILTO: payload01.MAILTO__c,
+	PROMCODE: payload01.PROMCODE__c,
+	RENCODE: payload01.RENCODE__c,
+	ACCNO: payload01.ACCNO__c,
+	INVTITLE: payload01.INVTITLE__c,
+	INVFNAME: payload01.INVFNAME__c,
+	INVSNAME: payload01.INVSNAME__c,
+	INVJOB: payload01.INVJOB__c,
+	INVSALUTATION: payload01.INVSALUTATION__c,
+	INVDEPT: payload01.INVDEPT__c,
+	INVCOMP: payload01.INVCOMP__c,
+	INVADD1: payload01.INVADD1__c,
+	INVADD2: payload01.INVADD2__c,
+	INVTOWN: payload01.INVTOWN__c,
+	INVCNTY: payload01.INVCNTY__c,
+	INVPCODE: payload01.INVPCODE__c,
+	INVCTRY: payload01.INVCTRY__c,
+	DSPTITLE: payload01.DSPTITLE__c,
+	DSPFNAME: payload01.DSPFNAME__c,
+	DSPSNAME: payload01.DSPSNAME__c,
+	DSPJOB: payload01.DSPJOB__c,
+	DSPSALUTATION: payload01.DSPSALUTATION__c,
+	DSPDEPT: payload01.DSPDEPT__c,
+	DSPCOMP: payload01.DSPCOMP__c,
+	DSPADD1: payload01.DSPADD1__c,
+	DSPADD2: payload01.DSPADD2__c,
+	DSPTOWN: payload01.DSPTOWN__c,
+	DSPCNTY: payload01.DSPCNTY__c,
+	DSPPCODE: payload01.DSPPCODE__c,
+	DSPCTRY: payload01.DSPCTRY__c,
+	VATNO: payload01.VATNO__c,
+	CUSTREF: payload01.CUSTREF__c,
+	PUBPRIV: payload01.PUBPRIV__c,
+	TPPRIV: payload01.TPPRIV__c,
+	REQEMAIL: payload01.REQEMAIL__c,
+	REQTEL: payload01.REQTEL__c,
+	STARTISS: payload01.STARTISS__c,
+	STARTISSUESALEDATE: payload01.STARTISSUESALEDATE__c,
+	ENDISS: payload01.ENDISS__c,
+	RENEWALSALEDATE: payload01.RENEWALSALEDATE__c,
+	REPLYDAT: payload01.REPLYDAT__c,
+	COPIES: payload01.COPIES__c,
+	CURRCODE: payload01.CURRCODE__c,
+	FULL1: payload01.FULL1__c,
+	FULL2: payload01.FULL2__c,
+	FULL3: payload01.FULL3__c,
+	FULL6: payload01.FULL6__c,
+	FULLD: payload01.FULLD__c,
+	OFFER1: payload01.OFFER1__c,
+	OFFER2: payload01.OFFER2__c,
+	OFFER3: payload01.OFFER3__c,
+	OFFER6: payload01.OFFER6__c,
+	OFFERD: payload01.OFFERD__c,
+	OFFERFREQ: payload01.OFFERFREQ__c,
+	DISC1: payload01.DISC1__c,
+	DISC2: payload01.DISC2__c,
+	DISC3: payload01.DISC3__c,
+	DISC6: payload01.DISC6__c,
+	DISCD: payload01.DISCD__c,
+	SAVE1: payload01.SAVE1__c,
+	SAVE2: payload01.SAVE2__c,
+	SAVE3: payload01.SAVE3__c,
+	SAVE6: payload01.SAVE6__c,
+	SAVED: payload01.SAVED__c,
+	ISSUES1: payload01.ISSUES1__c,
+	ISSUES2: payload01.ISSUES2__c,
+	ISSUES3: payload01.ISSUES3__c,
+	ISSUES6: payload01.ISSUES6__c,
+	ISSUESD: payload01.ISSUESD__c,
+	BUNDIFF: payload01.BUNDIFF__c,
+	PAYAMT: payload01.PAYAMT__c,
+	PAYDATE: payload01.PAYDATE__c,
+	PAYFREQ: payload01.PAYFREQ__c,
+	PAYISS: payload01.PAYISS__c,
+	NXTAMT: payload01.NXTAMT__c,
+	NXTDATE: payload01.NXTDATE__c,
+	NXTFREQ: payload01.NXTFREQ__c,
+	NXTISS: payload01.NXTISS__c,
+	BANKACC: payload01.BANKACC__c,
+	BANKSORT: payload01.BANKSORT__c,
+	BANKNAME: payload01.BANKNAME__c,
+	"Payment info suppressed": payload01.Payment_info_suppressed__c,
+	INVNO: payload01.INVNO__c,
+	VATAMT: payload01.VATAMT__c,
+	ISSREM: payload01.ISSREM__c,
+	CCCFLAG: payload01.CCCFLAG__c,
+	GIFTFLAG: payload01.GIFTFLAG__c,
+	GIFTDESC: payload01.GIFTDESC__c,
+	GIFTQTY: payload01.GIFTQTY__c,
+	AFFILFLG: payload01.AFFILFLG__c,
+	AFFILIAT: payload01.AFFILIAT__c,
+	SIZEFLAG: payload01.SIZEFLAG__c,
+	BUNFLAG: payload01.BUNFLAG__c,
+	MINTERM: payload01.MINTERM__c,
+	SIGCODE: payload01.SIGCODE__c,
+	"Bounced Email": payload01.Bounced_Email__c,
+	INVEMAIL: payload01.INVEMAIL__c,
+	DSPEMAIL: payload01.DSPEMAIL__c,
+	"ACCOUNT ID": payload01.ACCOUNT_ID__c,
+	"CONTACT ID": payload01.CONTACT_ID__c,
+	COMMID: payload01.COMMID__c,
+	COSTPERISSUE: payload01.COSTPERISSUE__c,
+	PERCENTDISC: payload01.PERCENTDISC__c,
+	X4XCUST: payload01.X4X_CUST__c,
+	CURRPROMOTYPE: payload01.CURRPROMOTYPE__c,
+	ERRORCODE: payload01.ErrorCode__c,
+	ERRORDESCRIPTION: payload01.ErrorDescription__c,
+	OFFERCCC: payload01.OFFERCCC__c,
+	OFFERCCCFREQ: payload01.OFFERCCCFREQ__c,
+	FULLCCC: payload01.FULLCCC__c,
+	DISCCCC: payload01.DISCCCC__c,
+	SAVECCC: payload01.SaveCCC__c,
+	OFFER1GIFT: payload01.OFFER1GIFT__c,
+	OFFER2GIFT: payload01.OFFER2GIFT__c,
+	OFFER3GIFT: payload01.OFFER3GIFT__c,
+	OFFER6GIFT: payload01.OFFER6GIFT__c,
+	OFFERDGIFT: payload01.OFFERDGIFT__c,
+	OFFERCCCGIFT: payload01.OFFERCCCGIFT__c,
+	INVPHONE: payload01.INVPHONE__c,
+	DSPPHONE: payload01.DSPPHONE__c
+})]]></dw:set-payload>
+                    </dw:transform-message>
+                    <sftp:outbound-endpoint exchange-pattern="one-way" connector-ref="SFTP" outputPattern="#[flowVars.escoFileName]" host="#[flowVars.EscoSFTPDetails.get(0).SFTP_Server_IP__c]" port="${sftp.port}" path="#[flowVars.EscoSFTPDetails.get(0).SFTP_Path__c]" user="#[flowVars.EscoSFTPDetails.get(0).Formatted_Username__c]" password="#[flowVars.EscoSFTPDetails.get(0).Formatted_Password__c]" responseTimeout="10000" doc:name="SFTP"/>
+                </batch:commit>
+            </batch:step>
+
+        </batch:process-records>
+        <batch:on-complete>
+            <choice doc:name="Choice">
+                <when expression="#[payload.loadedRecords &gt;0 &amp;&amp; payload.failedRecords == 0]">
+                    <set-payload value="${smtp.EscosuccessBody} File = #[flowVars.escoFileName]. ${msg.recordProcessedMsg} = #[payload.successfulRecords] out of #[payload.totalRecords]" doc:name="Success Email"/>
+                    <dw:transform-message doc:name="Transform Message">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.toAddress'),
+	cc_adresses__c: p('smtp.ccAddress'),
+	bcc_addresses__c: p('smtp.bccAddress'),
+	Email_Body__c: payload,
+	Email_Subject__c: p('file.escoVendorName') ++ 'Process Successfully completed | ' ++ p('env.name')
+}]]></dw:set-payload>
+                    </dw:transform-message>
+                    <sfdc:create-single config-ref="Salesforce__Basic_Authentication" type="Mule_Email__c" doc:name="Salesforce"/>
+                </when>
+                <when expression="#[payload.loadedRecords == 0]">
+                    <set-payload value="${msg.NoRecsFound} ${file.escoVendorName} | ${env.name} on #[server.dateTime.format(${file.emailTimeStamp})]" doc:name="No records Found"/>
+                    <dw:transform-message doc:name="Transform Message">
+                        <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.toAddress'),
+	cc_adresses__c: p('smtp.ccAddress'),
+	bcc_addresses__c: p('smtp.bccAddress'),
+	Email_Body__c: payload,
+	Email_Subject__c: p('msg.NoRecsFound') ++ p('file.escoVendorName') ++ ' | ' ++ p('env.name')
+}]]></dw:set-payload>
+                    </dw:transform-message>
+                    <sfdc:create-single config-ref="Salesforce__Basic_Authentication" type="Mule_Email__c" doc:name="Salesforce"/>
+                </when>
+                <otherwise>
+                    <logger level="INFO" doc:name="Logger"/>
+                </otherwise>
+            </choice>
+
+        </batch:on-complete>
+    </batch:job>
+    <flow name="escoprocessFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/Esco" allowedMethods="POST" doc:name="HTTP"/>
+        <batch:execute name="Esco_Batch_Process" doc:name="Esco_Batch_Process"/>
+    </flow>
+
+    <sub-flow name="getEscoSFTPDetails">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT Id,SFTP_Path__c,Formatted_Username__c,Formatted_Password__c,SFTP_Server_IP__c FROM Vendor_Details__c WHERE is_Active__c = true AND Name = '${file.escoVendorName}' LIMIT 1" doc:name="Salesforce"/>
+    </sub-flow>
+</mule>
