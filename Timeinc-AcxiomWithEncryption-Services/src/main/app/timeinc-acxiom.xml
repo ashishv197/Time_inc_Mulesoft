@@ -1,0 +1,1240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:sftp="http://www.mulesoft.org/schema/mule/sftp" xmlns:file="http://www.mulesoft.org/schema/mule/file" xmlns:encryption="http://www.mulesoft.org/schema/mule/encryption" xmlns:secure-property-placeholder="http://www.mulesoft.org/schema/mule/secure-property-placeholder" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/file http://www.mulesoft.org/schema/mule/file/current/mule-file.xsd
+http://www.mulesoft.org/schema/mule/secure-property-placeholder http://www.mulesoft.org/schema/mule/secure-property-placeholder/current/mule-secure-property-placeholder.xsd
+http://www.mulesoft.org/schema/mule/encryption http://www.mulesoft.org/schema/mule/encryption/current/mule-encryption.xsd
+http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sftp/current/mule-sftp.xsd">
+    <sfdc:config name="Salesforce__Basic_Authentication" username="${sfdc.username}" password="${sfdc.password}" securityToken="${sfdc.securityToken}" url="${sfdc.url}" doc:name="Salesforce: Basic Authentication" disableSessionInvalidation="true" fetchAllApexRestMetadata="true" fetchAllApexSoapMetadata="true">
+        <reconnect count="3"/>
+    </sfdc:config>
+    <spring:beans>
+        <spring:bean id="objectMap" name="Bean" class="java.util.HashMap">
+            <spring:constructor-arg>
+                <spring:map value-type="java.lang.String" key-type="java.lang.String">
+                    <spring:entry key="Zuora__Subscription__c" value="ZUORA_SUBSCRIPTION"/>
+                    <spring:entry key="Issue__c" value="ZUORA_SCHEDULED_ISSUE"/>
+                    <spring:entry key="Customer_Publication_Segment__c" value="ZUORA_CUST_PUB_SEG"/>
+                    <spring:entry key="Subscriber_Issue_Schedule__c" value="ZUORA_SUBS_ISSUE_SCHED"/>
+                    <spring:entry key="Offer__c" value="ZUORA_OFFER"/>
+                    <spring:entry key="Publication__c" value="ZUORA_PUBLICATION"/>
+                    <spring:entry key="zqu__Quote__c" value="ZUORA_QUOTE"/>
+                    <spring:entry key="Contact" value="ZUORA_CONTACT"/>
+                    <spring:entry key="Zuora__SubscriptionProductCharge__c" value="ZUORA_SUBS_PROD_CHARGE"/>
+                    <spring:entry key="Opportunity" value="ZUORA_OPPORTUNITY"/>
+                    <spring:entry key="Promotion__c" value="ZUORA_PROMOTION"/>
+                </spring:map>
+            </spring:constructor-arg>
+        </spring:bean>
+    </spring:beans>
+    <encryption:config name="Encryption" defaultEncrypter="PGP_ENCRYPTER" doc:name="Encryption">
+        <encryption:pgp-encrypter-config publicKeyRingFileName="${app.home}/classes/encrytion/KEYS/gnupg/pubring.gpg"  secretAliasId="1026862435498891357" principal="Adam Hinchliffe (Version 2) &lt;ahinch@acxiom.com&gt;" secretKeyRingFileName="${app.home}/classes/encrytion/KEYS/gnupg/secring.gpg"/>
+    </encryption:config>
+    <secure-property-placeholder:config name="Secure_Property_Placeholder" key="${mule.spp.key}" location="sfdc2acxiom-${mule.env}.properties" doc:name="Secure Property Placeholder"/>
+    <sftp:connector name="SFTP_OUTBOUND" validateConnections="true" doc:name="SFTP">
+        <reconnect count="3"/>
+    </sftp:connector>
+    <flow name="time-ipc-sfdc_acxiom_VendorCheck">
+        <poll doc:name="Poll">
+            <fixed-frequency-scheduler frequency="1000" timeUnit="HOURS"/>
+            <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT Description__c,Formatted_Password__c,Id,Name,Primary_Contact__c,SFTP_Password__c,SFTP_Path__c,SFTP_Server_IP__c,SFTP_Username__c,Secondary_Contact__c FROM Vendor_Details__c WHERE Name = '${sfdc.vendordetail.name}'" doc:name="Salesforce"/>
+        </poll>
+        <dw:transform-message doc:name="Transform Message" metadata:id="c92279ba-263d-4c6e-b72c-e69c20972827">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	SFTPPassword: payload01.SFTP_Password__c,
+	SFTPPath: payload01.SFTP_Path__c,
+	SFTPServerIP: payload01.SFTP_Server_IP__c,
+	SFTPUsername: payload01.SFTP_Username__c,
+	description: payload01.Description__c,
+	formattedPassword: payload01.Formatted_Password__c,
+	Id: payload01.Id,
+	name: payload01.Name,
+	primaryContact: payload01.Primary_Contact__c,
+	secondaryContact: payload01.Secondary_Contact__c
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <set-variable variableName="vendorDetails" value="#[payload]" doc:name="Variable"/>
+        <choice doc:name="Check Record Count">
+            <when expression="#[payload  != null &amp;&amp; payload.size()&gt;0]">
+                <flow-ref name="time-ipc-sfdc_acxiom_checkObjects" doc:name="Flow Reference"/>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Send Email"/>
+            </otherwise>
+        </choice>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="time-ipc-sfdc_acxiom_checkObjects" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT CreatedById,CreatedDate,CurrencyIsoCode,Id,IsDeleted,LastExtractDateTime__c,LastModifiedById,LastModifiedDate,Name,SetupOwnerId,SystemModstamp FROM AcxiomExportDetails__c" doc:name="Salesforce"/>
+        <foreach doc:name="For Each">
+            <set-variable variableName="exceptionOccured" value="0" doc:name="exceptionOccuredFlag"/>
+            <set-variable variableName="AxiomExportDetails" value="#[payload]" doc:name="AxiomExportDetails"/>
+            <set-variable variableName="objectName" value="#[payload.Name]" doc:name="Get Object Name"/>
+            <set-variable variableName="currentTS" value="#[server.dateTime.format('YYYY-MM-dd')]T#[server.dateTime.format('HH:mm:ss')]Z" doc:name="Get Current TimeStamp"/>
+            <choice doc:name="Choice">
+                <when expression="#[payload.LastExtractDateTime__c == null || payload.LastExtractDateTime__c.equals(&quot;&quot;)]">
+                    <set-variable variableName="criteria" value="LastModifiedDate &lt; #[flowVars.currentTS]" doc:name="Set Criteria"/>
+                </when>
+                <otherwise>
+                    <set-variable variableName="criteria" value="LastModifiedDate&gt;=  #[payload.LastExtractDateTime__c] AND LastModifiedDate &lt; #[flowVars.currentTS]" doc:name="Set Criteria"/>
+                </otherwise>
+            </choice>
+            <set-variable variableName="recordCount" value="0" doc:name="Set Default recordCount"/>
+            <flow-ref name="#[app.registry.objectMap.get(flowVars.objectName)]" doc:name="Convert Salesforce Object to CSV File"/>
+            <choice doc:name="No Error">
+                <when expression="#[flowVars.exceptionOccured==0]">
+                    <choice doc:name="Check Record Count">
+                        <when expression="#[flowVars.recordCount&gt;0]">
+                            <object-to-string-transformer doc:name="Object to String"/>
+                            <flow-ref name="time-ipc-sfdc_acxiom_saveSFTP" doc:name="Save To SFTP"/>
+                        </when>
+                        <otherwise>
+                            <logger level="INFO" doc:name="Logger"/>
+                        </otherwise>
+                    </choice>
+                </when>
+                <otherwise>
+                    <logger level="INFO" doc:name="Logger"/>
+                </otherwise>
+            </choice>
+        </foreach>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_QUOTE">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT BAR_Percentage__c,Cancellation_Reason__c,CreatedById,CreatedDate,CurrencyIsoCode,CustomCancellationDate__c,EditableSubscriptionName__c,Edition__c,Extension_Reason__c,Free_Codes__c,Id,IsDeleted,Is_Extended__c,LastAmendmentType__c,LastModifiedById,LastModifiedDate,LastReferencedDate,LastViewedDate,Name,Order_Reference__c,OwnerId,Publication__c,Reader_Type__c,RecordTypeId,SF_BillToCRMId__c,SF_OpportunityId__c,SF_OpportunityIssueId__c,SF_OpportunityOfferId__c,SF_ShipToCRMId__c,SystemModstamp,TIFF_Number__c,Transfer_to_Credit_Balance__c,zqu__Account__c,zqu__AmendmentName__c,zqu__Amendment_Name__c,zqu__AutoRenew__c,zqu__BillCycleDay__c,zqu__BillToContact__c,zqu__BillingBatch__c,zqu__BillingCycleDay__c,zqu__BillingMethod__c,zqu__Calculate_Quote_Metrics_Through__c,zqu__CancellationDate__c,zqu__CancellationEffectiveDate__c,zqu__CommunicationProfile__c,zqu__Currency__c,zqu__Customer_Acceptance_Date__c,zqu__DeltaMRR__c,zqu__DeltaTCV__c,zqu__Description__c,zqu__ElectronicPaymentMethodId__c,zqu__ExistSubscriptionID__c,zqu__GenerateInvoice__c,zqu__Hidden_Subscription_Name__c,zqu__InitialTerm__c,zqu__InvoiceDate__c,zqu__InvoiceID__c,zqu__InvoiceOwnerId__c,zqu__InvoiceOwnerName__c,zqu__InvoiceProcessingOption__c,zqu__InvoiceSeparately__c,zqu__InvoiceTargetDate__c,zqu__InvoiceTemplate__c,zqu__Is_Charge_Expired__c,zqu__Is_Parent_Quote__c,zqu__MRR__c,zqu__Number__c,zqu__Opportunity__c,zqu__ParentQuote__c,zqu__PaymentGateway__c,zqu__PaymentMethod__c,zqu__PaymentTerm__c,zqu__Previewed_Delta_MRR__c,zqu__Previewed_Delta_TCV__c,zqu__Previewed_Discount__c,zqu__Previewed_MRR__c,zqu__Previewed_SubTotal__c,zqu__Previewed_TCV__c,zqu__Previewed_Tax__c,zqu__Previewed_Total__c,zqu__ProcessPayment__c,zqu__ProductSelectorVersion__c,zqu__QuoteTemplate__c,zqu__RecordReadOnly__c,zqu__RenewalSetting__c,zqu__RenewalTerm__c,zqu__Service_Activation_Date__c,zqu__SoldToContact__c,zqu__StartDate__c,zqu__Status__c,zqu__SubscriptionName__c,zqu__SubscriptionTermEndDate__c,zqu__SubscriptionTermStartDate__c,zqu__SubscriptionType__c,zqu__SubscriptionVersion__c,zqu__Subscription_Name__c,zqu__Subscription_Term_Type__c,zqu__TCV__c,zqu__Tax__c,zqu__TermStartDate__c,zqu__Terms__c,zqu__Total__c,zqu__ValidUntil__c,zqu__ZuoraAccountID__c,zqu__ZuoraConfig__c,zqu__ZuoraParentBillingAccountId__c,zqu__ZuoraParentBillingAccountName__c,zqu__ZuoraPaymentID__c,zqu__ZuoraSubscriptionID__c,zqu__Zuora_Account_Number__c FROM zqu__Quote__c WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Record Count"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="a166ba2f-c14f-4656-ad5c-889958766dbf">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	BAR_Percentage__c : payload01.BAR_Percentage__c,
+	Cancellation_Reason__c : payload01.Cancellation_Reason__c,
+	CreatedById : payload01.CreatedById,
+	CreatedDate : payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+	CurrencyIsoCode : payload01.CurrencyIsoCode,
+	CustomCancellationDate__c : payload01.CustomCancellationDate__c,
+	EditableSubscriptionName__c : payload01.EditableSubscriptionName__c,
+	Edition__c : payload01.Edition__c,
+	Extension_Reason__c : payload01.Extension_Reason__c,
+	Free_Codes__c : payload01.Free_Codes__c,
+	Id : payload01.Id,
+	IsDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '',
+	Is_Extended__c : payload01.Is_Extended__c as :string when payload01.Is_Extended__c != null otherwise '',
+	LastAmendmentType__c : payload01.LastAmendmentType__c,
+	LastModifiedById : payload01.LastModifiedById,
+	LastModifiedDate : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+	LastReferencedDate : payload01.LastReferencedDate as :string {format: "yyyy/MM/dd"} when payload01.LastReferencedDate != null otherwise '',
+	LastViewedDate : payload01.LastViewedDate as :string {format: "yyyy/MM/dd"} when payload01.LastViewedDate != null otherwise '',
+	Name : payload01.Name,
+	Order_Reference__c : payload01.Order_Reference__c,
+	OwnerId : payload01.OwnerId,
+	Publication__c : payload01.Publication__c,
+	Reader_Type__c : payload01.Reader_Type__c,
+	RecordTypeId : payload01.RecordTypeId,
+	SF_BillToCRMId__c : payload01.SF_BillToCRMId__c,
+	SF_OpportunityId__c : payload01.SF_OpportunityId__c,
+	SF_OpportunityIssueId__c : payload01.SF_OpportunityIssueId__c,
+	SF_OpportunityOfferId__c : payload01.SF_OpportunityOfferId__c,
+	SF_ShipToCRMId__c : payload01.SF_ShipToCRMId__c,
+	SystemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '',
+	TIFF_Number__c : payload01.TIFF_Number__c,
+	Transfer_to_Credit_Balance__c : payload01.Transfer_to_Credit_Balance__c as :string when payload01.Transfer_to_Credit_Balance__c != null otherwise '',
+	zqu__Account__c : payload01.zqu__Account__c,
+	zqu__AmendmentName__c : payload01.zqu__AmendmentName__c,
+	zqu__Amendment_Name__c : payload01.zqu__Amendment_Name__c,
+	zqu__AutoRenew__c : payload01.zqu__AutoRenew__c as :string when payload01.zqu__AutoRenew__c != null otherwise '',
+	zqu__BillCycleDay__c : payload01.zqu__BillCycleDay__c,
+	zqu__BillToContact__c : payload01.zqu__BillToContact__c,
+	zqu__BillingBatch__c : payload01.zqu__BillingBatch__c,
+	zqu__BillingCycleDay__c : payload01.zqu__BillingCycleDay__c,
+	zqu__BillingMethod__c : payload01.zqu__BillingMethod__c,
+	zqu__Calculate_Quote_Metrics_Through__c : payload01.zqu__Calculate_Quote_Metrics_Through__c,
+	zqu__CancellationDate__c : payload01.zqu__CancellationDate__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__CancellationDate__c != null otherwise '',
+	zqu__CancellationEffectiveDate__c : payload01.zqu__CancellationEffectiveDate__c,
+	zqu__CommunicationProfile__c : payload01.zqu__CommunicationProfile__c,
+	zqu__Currency__c : payload01.zqu__Currency__c,
+	zqu__Customer_Acceptance_Date__c : payload01.zqu__Customer_Acceptance_Date__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__Customer_Acceptance_Date__c != null otherwise '',
+	zqu__DeltaMRR__c : payload01.zqu__DeltaMRR__c as :string when payload01.zqu__DeltaMRR__c != null otherwise '',
+	zqu__DeltaTCV__c : payload01.zqu__DeltaTCV__c as :string when payload01.zqu__DeltaTCV__c != null otherwise '',
+	zqu__Description__c : payload01.zqu__Description__c,
+	zqu__ElectronicPaymentMethodId__c : payload01.zqu__ElectronicPaymentMethodId__c,
+	zqu__ExistSubscriptionID__c : payload01.zqu__ExistSubscriptionID__c,
+	zqu__GenerateInvoice__c : payload01.zqu__GenerateInvoice__c as :string when payload01.zqu__GenerateInvoice__c != null otherwise '',
+	zqu__Hidden_Subscription_Name__c : payload01.zqu__Hidden_Subscription_Name__c,
+	zqu__InitialTerm__c : payload01.zqu__InitialTerm__c as :string when payload01.zqu__InitialTerm__c != null otherwise '',
+	zqu__InvoiceDate__c : payload01.zqu__InvoiceDate__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__InvoiceDate__c != null otherwise '',
+	zqu__InvoiceID__c : payload01.zqu__InvoiceID__c,
+	zqu__InvoiceOwnerId__c : payload01.zqu__InvoiceOwnerId__c,
+	zqu__InvoiceOwnerName__c : payload01.zqu__InvoiceOwnerName__c,
+	zqu__InvoiceProcessingOption__c : payload01.zqu__InvoiceProcessingOption__c,
+	zqu__InvoiceSeparately__c : payload01.zqu__InvoiceSeparately__c as :string when payload01.zqu__InvoiceSeparately__c != null otherwise '',
+	zqu__InvoiceTargetDate__c : payload01.zqu__InvoiceTargetDate__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__InvoiceTargetDate__c != null otherwise '',
+	zqu__InvoiceTemplate__c : payload01.zqu__InvoiceTemplate__c,
+	zqu__Is_Charge_Expired__c : payload01.zqu__Is_Charge_Expired__c as :string when payload01.zqu__Is_Charge_Expired__c != null otherwise '',
+	zqu__Is_Parent_Quote__c : payload01.zqu__Is_Parent_Quote__c as :string when payload01.zqu__Is_Parent_Quote__c != null otherwise '',
+	zqu__MRR__c : payload01.zqu__MRR__c as :string when payload01.zqu__MRR__c != null otherwise '',
+	zqu__Number__c : payload01.zqu__Number__c,
+	zqu__Opportunity__c : payload01.zqu__Opportunity__c,
+	zqu__ParentQuote__c : payload01.zqu__ParentQuote__c,
+	zqu__PaymentGateway__c : payload01.zqu__PaymentGateway__c,
+	zqu__PaymentMethod__c : payload01.zqu__PaymentMethod__c,
+	zqu__PaymentTerm__c : payload01.zqu__PaymentTerm__c,
+	zqu__Previewed_Delta_MRR__c : payload01.zqu__Previewed_Delta_MRR__c as :string when payload01.zqu__Previewed_Delta_MRR__c != null otherwise '',
+	zqu__Previewed_Delta_TCV__c : payload01.zqu__Previewed_Delta_TCV__c as :string when payload01.zqu__Previewed_Delta_TCV__c != null otherwise '',
+	zqu__Previewed_Discount__c : payload01.zqu__Previewed_Discount__c as :string when payload01.zqu__Previewed_Discount__c != null otherwise '',
+	zqu__Previewed_MRR__c : payload01.zqu__Previewed_MRR__c as :string when payload01.zqu__Previewed_MRR__c != null otherwise '',
+	zqu__Previewed_SubTotal__c : payload01.zqu__Previewed_SubTotal__c as :string when payload01.zqu__Previewed_SubTotal__c != null otherwise '',
+	zqu__Previewed_TCV__c : payload01.zqu__Previewed_TCV__c as :string when payload01.zqu__Previewed_TCV__c != null otherwise '',
+	zqu__Previewed_Tax__c : payload01.zqu__Previewed_Tax__c as :string when payload01.zqu__Previewed_Tax__c != null otherwise '',
+	zqu__Previewed_Total__c : payload01.zqu__Previewed_Total__c as :string when payload01.zqu__Previewed_Total__c != null otherwise '',
+	zqu__ProcessPayment__c : payload01.zqu__ProcessPayment__c as :string when payload01.zqu__ProcessPayment__c != null otherwise '',
+	zqu__ProductSelectorVersion__c : payload01.zqu__ProductSelectorVersion__c,
+	zqu__QuoteTemplate__c : payload01.zqu__QuoteTemplate__c,
+	zqu__RecordReadOnly__c : payload01.zqu__RecordReadOnly__c as :string when payload01.zqu__RecordReadOnly__c != null otherwise '',
+	zqu__RenewalSetting__c : payload01.zqu__RenewalSetting__c,
+	zqu__RenewalTerm__c : payload01.zqu__RenewalTerm__c as :string when payload01.zqu__RenewalTerm__c != null otherwise '',
+	zqu__Service_Activation_Date__c : payload01.zqu__Service_Activation_Date__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__Service_Activation_Date__c != null otherwise '',
+	zqu__SoldToContact__c : payload01.zqu__SoldToContact__c,
+	zqu__StartDate__c : payload01.zqu__StartDate__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__StartDate__c != null otherwise '',
+	zqu__Status__c : payload01.zqu__Status__c,
+	zqu__SubscriptionName__c : payload01.zqu__SubscriptionName__c,
+	zqu__SubscriptionTermEndDate__c : payload01.zqu__SubscriptionTermEndDate__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__SubscriptionTermEndDate__c != null otherwise '',
+	zqu__SubscriptionTermStartDate__c : payload01.zqu__SubscriptionTermStartDate__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__SubscriptionTermStartDate__c != null otherwise '',
+	zqu__SubscriptionType__c : payload01.zqu__SubscriptionType__c,
+	zqu__SubscriptionVersion__c : payload01.zqu__SubscriptionVersion__c as :string when payload01.zqu__SubscriptionVersion__c != null otherwise '',
+	zqu__Subscription_Name__c : payload01.zqu__Subscription_Name__c,
+	zqu__Subscription_Term_Type__c : payload01.zqu__Subscription_Term_Type__c,
+	zqu__TCV__c : payload01.zqu__TCV__c as :string when payload01.zqu__TCV__c != null otherwise '',
+	zqu__Tax__c : payload01.zqu__Tax__c,
+	zqu__TermStartDate__c : payload01.zqu__TermStartDate__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__TermStartDate__c != null otherwise '',
+	zqu__Terms__c : payload01.zqu__Terms__c,
+	zqu__Total__c : payload01.zqu__Total__c as :string when payload01.zqu__Total__c != null otherwise '',
+	zqu__ValidUntil__c : payload01.zqu__ValidUntil__c as :string {format: "yyyy/MM/dd"} when payload01.zqu__ValidUntil__c != null otherwise '',
+	zqu__ZuoraAccountID__c : payload01.zqu__ZuoraAccountID__c,
+	zqu__ZuoraConfig__c : payload01.zqu__ZuoraConfig__c,
+	zqu__ZuoraParentBillingAccountId__c : payload01.zqu__ZuoraParentBillingAccountId__c,
+	zqu__ZuoraParentBillingAccountName__c : payload01.zqu__ZuoraParentBillingAccountName__c,
+	zqu__ZuoraPaymentID__c : payload01.zqu__ZuoraPaymentID__c,
+	zqu__ZuoraSubscriptionID__c : payload01.zqu__ZuoraSubscriptionID__c,
+	zqu__Zuora_Account_Number__c : payload01.zqu__Zuora_Account_Number__c
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_PUBLICATION" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT ABCReference__c,Active__c,CreatedById,CreatedDate,CurrencyIsoCode,Id,IsDeleted,LastModifiedById,LastModifiedDate,LastReferencedDate,LastViewedDate,Magazine_Number__c,Multiple_Copy_Overseas__c,Multiple_Copy_UK__c,Name,Number_of_Issues_per_Year__c,Print_Overrun__c,Print_overrun_Export_surplus__c,Product__c,Single_Copy_Ireland__c,Single_Copy_Overseas__c,Single_Copy_UK__c,SystemModstamp FROM Publication__c WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="97c4aac8-1d5f-44cd-b12d-7f70fd77b225">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+	ABCReference__c : payload01.ABCReference__c,
+	Active__c : payload01.Active__c as :string when payload01.Active__c != null otherwise '',
+	CreatedById : payload01.CreatedById,
+	CreatedDate : payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+	CurrencyIsoCode : payload01.CurrencyIsoCode,
+	Id : payload01.Id,
+	IsDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '',
+	LastModifiedById : payload01.LastModifiedById,
+	LastModifiedDate : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+	LastReferencedDate : payload01.LastReferencedDate as :string {format: "yyyy/MM/dd"} when payload01.LastReferencedDate != null otherwise '',
+	LastViewedDate : payload01.LastViewedDate as :string {format: "yyyy/MM/dd"} when payload01.LastViewedDate != null otherwise '',
+	Magazine_Number__c : payload01.Magazine_Number__c,
+	Multiple_Copy_Overseas__c : payload01.Multiple_Copy_Overseas__c,
+	Multiple_Copy_UK__c : payload01.Multiple_Copy_UK__c,
+	Name : payload01.Name,
+	Number_of_Issues_per_Year__c : payload01.Number_of_Issues_per_Year__c as :string when payload01.Number_of_Issues_per_Year__c != null otherwise '',
+	Print_Overrun__c : payload01.Print_Overrun__c as :string when payload01.Print_Overrun__c != null otherwise '',
+	Print_overrun_Export_surplus__c : payload01.Print_overrun_Export_surplus__c as :string when payload01.Print_overrun_Export_surplus__c != null otherwise '',
+	Product__c : payload01.Product__c,
+	Single_Copy_Ireland__c : payload01.Single_Copy_Ireland__c,
+	Single_Copy_Overseas__c : payload01.Single_Copy_Overseas__c,
+	Single_Copy_UK__c : payload01.Single_Copy_UK__c,
+	SystemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise ''
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_CUST_PUB_SEG" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT Account__c,Active_Subscriptions__c,All_Communications__c,Auto_Acknowledgement_Required__c,Auto_Renewal__c,Billing_Country__c,Billing_Shipping_Contacts_Different__c,Campaign_Code__c,Cancellation_Code__c,Cancellation_Date__c,Cover_Date__c,CreatedById,CreatedDate,CurrencyIsoCode,CurrentRenewalEffortNumber__c,Current_Amount_Paid__c,Current_Renewal_Reminder_Sent__c,Current_Scheduled_Communications__c,Current_Sub_Expiry_Date__c,Data_Export_Reader_Type__c,Datamart_Reader_Type__c,Datamart_Subscription_Status__c,Datamart_Subscription_Type__c,Direct_Donor__c,Edition__c,Email__c,Extended_Count__c,Extended_Quote_IDs__c,IPAD_Account_ID__c,IPC_Email_Opt_Out__c,IPC_Mobile_Opt_Out__c,IPC_Phone_or_Post_Opt_Out__c,Id,Inbound_Channel__c,IsDeleted,Journal_Code__c,Journal_Reader_Code__c,LastActivityDate,LastModifiedById,LastModifiedDate,LastReferencedDate,LastViewedDate,Last_Issue_Label_Run_Date__c,Last_Issue_Shipped_Date__c,Last_Sub_Expiry_Date__c,Migrated_Life_Time_Value__c,Migrated_Renewal_Count__c,Mobile__c,Most_Recent_Subscription_Value__c,Name,New_Order_Renewal_Date__c,No_of_times_Renewed_on_DD__c,Non_Segmented_Record__c,Order_Originator__c,Original_Promotion_Code__c,Outbound_Channel__c,Payment_Frequency_In_Months__c,Payment_Method_Code__c,Payment_Method__c,Payment_Term__c,Product__c,Promotion_Code__c,Propensity_Score__c,Renewal_Count__c,Renewal_On_Acquisition_Status__c,Scheduled_Communications__c,Segment__c,ShippingCountry__c,Shipping_Country__c,Shipping_Region__c,Subscription_Number__c,Subscription_Original_Date__c,Subscription_Status__c,Subscription__c,SystemModstamp,Target_Renewal_Campaign__c,Telephone__c,Term_Length__c,Third_Party_Email_Opt_Out__c,Third_Party_Mobile_Opt_Out__c,Third_Party_Phone_or_Post_Opt_Out__c,Total_Lifetime_Value__c,Zuora_Renewal_Count__c,of_Copies__c FROM Customer_Publication_Segment__c WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="56a3c11e-0c5f-4fe6-8c61-4da4cbe70480">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+Account__c : payload01.Account__c,
+Active_Subscriptions__c : payload01.Active_Subscriptions__c as :string when payload01.Active_Subscriptions__c != null otherwise '',
+All_Communications__c : payload01.All_Communications__c,
+Auto_Acknowledgement_Required__c : payload01.Auto_Acknowledgement_Required__c as :string when payload01.Auto_Acknowledgement_Required__c != null otherwise '',
+Auto_Renewal__c : payload01.Auto_Renewal__c as :string when payload01.Auto_Renewal__c != null otherwise '',
+Billing_Country__c : payload01.Billing_Country__c,
+Billing_Shipping_Contacts_Different__c : payload01.Billing_Shipping_Contacts_Different__c as :string when payload01.Billing_Shipping_Contacts_Different__c != null otherwise '',
+Campaign_Code__c : payload01.Campaign_Code__c,
+Cancellation_Code__c : payload01.Cancellation_Code__c,
+Cancellation_Date__c : payload01.Cancellation_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Cancellation_Date__c != null otherwise '',
+Cover_Date__c : payload01.Cover_Date__c,
+CreatedById : payload01.CreatedById,
+CreatedDate : payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+CurrencyIsoCode : payload01.CurrencyIsoCode,
+CurrentRenewalEffortNumber__c : payload01.CurrentRenewalEffortNumber__c as :string when payload01.CurrentRenewalEffortNumber__c != null otherwise '',
+Current_Amount_Paid__c : payload01.Current_Amount_Paid__c as :string when payload01.Current_Amount_Paid__c != null otherwise '',
+Current_Renewal_Reminder_Sent__c : payload01.Current_Renewal_Reminder_Sent__c as :string when payload01.Current_Renewal_Reminder_Sent__c != null otherwise '',
+Current_Scheduled_Communications__c : payload01.Current_Scheduled_Communications__c,
+Current_Sub_Expiry_Date__c : payload01.Current_Sub_Expiry_Date__c,
+Datamart_Subscription_Status__c : payload01.Datamart_Subscription_Status__c,
+Datamart_Subscription_Type__c : payload01.Datamart_Subscription_Type__c,
+Direct_Donor__c : payload01.Direct_Donor__c,
+Edition__c : payload01.Edition__c,
+Email__c : payload01.Email__c,
+Extended_Count__c : payload01.Extended_Count__c as :string when payload01.Extended_Count__c != null otherwise '',
+Extended_Quote_IDs__c : payload01.Extended_Quote_IDs__c,
+IPAD_Account_ID__c : payload01.IPAD_Account_ID__c,
+IPC_Email_Opt_Out__c : payload01.IPC_Email_Opt_Out__c,
+IPC_Mobile_Opt_Out__c : payload01.IPC_Mobile_Opt_Out__c,
+IPC_Phone_or_Post_Opt_Out__c : payload01.IPC_Phone_or_Post_Opt_Out__c,
+Id : payload01.Id,
+Inbound_Channel__c : payload01.Inbound_Channel__c,
+IsDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '',
+Journal_Code__c : payload01.Journal_Code__c,
+LastActivityDate : payload01.LastActivityDate as :string {format: "yyyy/MM/dd"} when payload01.LastActivityDate != null otherwise '',
+LastModifiedById : payload01.LastModifiedById,
+LastModifiedDate : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+LastReferencedDate : payload01.LastReferencedDate as :string {format: "yyyy/MM/dd"} when payload01.LastReferencedDate != null otherwise '',
+LastViewedDate : payload01.LastViewedDate as :string {format: "yyyy/MM/dd"} when payload01.LastViewedDate != null otherwise '',
+Last_Issue_Label_Run_Date__c : payload01.Last_Issue_Label_Run_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Last_Issue_Label_Run_Date__c != null otherwise '',
+Last_Issue_Shipped_Date__c : payload01.Last_Issue_Shipped_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Last_Issue_Shipped_Date__c != null otherwise '',
+Last_Sub_Expiry_Date__c : payload01.Last_Sub_Expiry_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Last_Sub_Expiry_Date__c != null otherwise '',
+Migrated_Life_Time_Value__c : payload01.Migrated_Life_Time_Value__c as :string when payload01.Migrated_Life_Time_Value__c != null otherwise '',
+Migrated_Renewal_Count__c : payload01.Migrated_Renewal_Count__c as :string when payload01.Migrated_Renewal_Count__c != null otherwise '',
+Mobile__c : payload01.Mobile__c,
+Most_Recent_Subscription_Value__c : payload01.Most_Recent_Subscription_Value__c,
+Name : payload01.Name,
+New_Order_Renewal_Date__c : payload01.New_Order_Renewal_Date__c as :string {format: "yyyy/MM/dd"} when payload01.New_Order_Renewal_Date__c != null otherwise '',
+No_of_times_Renewed_on_DD__c : payload01.No_of_times_Renewed_on_DD__c as :string when payload01.No_of_times_Renewed_on_DD__c != null otherwise '',
+Non_Segmented_Record__c : payload01.Non_Segmented_Record__c as :string when payload01.Non_Segmented_Record__c != null otherwise '',
+Order_Originator__c : payload01.Order_Originator__c,
+Original_Promotion_Code__c : payload01.Original_Promotion_Code__c,
+Outbound_Channel__c : payload01.Outbound_Channel__c,
+Payment_Frequency_In_Months__c : payload01.Payment_Frequency_In_Months__c as :string when payload01.Payment_Frequency_In_Months__c != null otherwise '',
+Payment_Method_Code__c : payload01.Payment_Method_Code__c,
+Payment_Method__c : payload01.Payment_Method__c,
+Payment_Term__c : payload01.Payment_Term__c,
+Product__c : payload01.Product__c,
+Promotion_Code__c : payload01.Promotion_Code__c,
+Propensity_Score__c : payload01.Propensity_Score__c as :string when payload01.Propensity_Score__c != null otherwise '',
+Renewal_Count__c : payload01.Renewal_Count__c as :string when payload01.Renewal_Count__c != null otherwise '',
+Renewal_On_Acquisition_Status__c : payload01.Renewal_On_Acquisition_Status__c,
+Scheduled_Communications__c : payload01.Scheduled_Communications__c,
+Segment__c : payload01.Segment__c,
+ShippingCountry__c : payload01.ShippingCountry__c,
+Shipping_Country__c : payload01.Shipping_Country__c,
+Shipping_Region__c : payload01.Shipping_Region__c,
+Subscription_Number__c : payload01.Subscription_Number__c,
+Subscription_Original_Date__c : payload01.Subscription_Original_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Subscription_Original_Date__c != null otherwise '',
+Subscription_Status__c : payload01.Subscription_Status__c,
+Subscription__c : payload01.Subscription__c,
+SystemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '',
+Target_Renewal_Campaign__c : payload01.Target_Renewal_Campaign__c,
+Telephone__c : payload01.Telephone__c,
+Term_Length__c : payload01.Term_Length__c as :string when payload01.Term_Length__c != null otherwise '',
+Third_Party_Email_Opt_Out__c : payload01.Third_Party_Email_Opt_Out__c,
+Third_Party_Mobile_Opt_Out__c : payload01.Third_Party_Mobile_Opt_Out__c,
+Third_Party_Phone_or_Post_Opt_Out__c : payload01.Third_Party_Phone_or_Post_Opt_Out__c,
+Total_Lifetime_Value__c : payload01.Total_Lifetime_Value__c,
+Zuora_Renewal_Count__c : payload01.Zuora_Renewal_Count__c as :string when payload01.Zuora_Renewal_Count__c != null otherwise '',
+of_Copies__c : payload01.of_Copies__c as :string when payload01.of_Copies__c != null otherwise '',
+Data_Exportr_Type__c : payload01.Data_Export_Reader_Type__c,
+Datamartr_Type__c : payload01.Datamart_Reader_Type__c,
+Journalr_Code__c : payload01.Journal_Reader_Code__c
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_CONTACT" processingStrategy="synchronous">
+
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT ABC_Reporting_Region__c,AccountId,AccountId__c,AccountName__c,Address_Code_Generated__c,Address_Code_Migrated__c,Address_Code__c,Address_DOB_Key__c,Address_Key__c,Allow_Cross_Region_Address_Update__c,AssistantName,AssistantPhone,Birthdate,Contact_Preference__c,Country_Code__c,Country_Region__c,CreatedById,CreatedDate,CurrencyIsoCode,Department,Description,Dispatch_Code__c,Dispatch_Name__c,Do_Not_Communicate__c,Email,EmailBouncedDate,EmailBouncedReason,Email_Bounced__c,Email_DOB_Key__c,Email_Key__c,Fax,FirstName,Fulfilment_Region__c,HomePhone,IPC_Email_Opt_Out__c,IPC_Mobile_Opt_Out__c,IPC_Phone_or_Post_Opt_Out__c,Id,IsDeleted,IsEmailBounced,Is_CBA__c,Jigsaw,JigsawContactId,Job_Title__c,LastActivityDate,LastCURequestDate,LastCUUpdateDate,LastModifiedById,LastModifiedDate,LastName,LastReferencedDate,LastViewedDate,LeadSource,MailingAddress,MailingCity,MailingCountry,MailingLatitude,MailingLongitude,MailingPostalCode,MailingState,MailingStreet,Mailing_Address_Formatted__c,MasterRecordId,MobilePhone,Mobile_Key__c,Name,OtherAddress,OtherCity,OtherCountry,OtherLatitude,OtherLongitude,OtherPhone,OtherPostalCode,OtherState,OtherStreet,OwnerId,Phone,PhotoUrl,Preferred_Postal_Service_Provider__c,Pricing_Region__c,QSSCountryName__c,QSS_Code__c,Reader_Code_Generated__c,Reader_Code_Migrated__c,Reader_Code__c,RecordTypeId,ReportsToId,Salutation,Salutation__c,Security_Answer_1__c,Security_Question_1__c,SystemModstamp,Third_Party_Email_Opt_Out__c,Third_Party_Mobile_Opt_Out__c,Third_Party_Phone_or_Post_Opt_Out__c,Title,Unnamed__c,VAT_Registration_No__c,Zuora_Rate_Plan_Region__c,zqu__County__c FROM Contact WHERE #[flowVars.criteria] LIMIT 1000" doc:name="Salesforce"/>
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="List&lt;Contact&gt; to POJO" metadata:id="d0ed485f-ad72-49e1-ab27-a8342e115ffa">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+payload map ((payload01 , indexOfPayload01) -> {
+accountId : payload01.AccountId,
+assistantName : payload01.AssistantName,
+assistantPhone : payload01.AssistantPhone,
+birthdate : payload01.Birthdate as :string {format: "yyyy/MM/dd"} when payload01.Birthdate != null otherwise '',
+createdById : payload01.CreatedById,
+createdDate : payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+currencyIsoCode : payload01.CurrencyIsoCode,
+department : payload01.Department,
+description : payload01.Description,
+email : payload01.Email,
+emailBouncedDate : payload01.EmailBouncedDate as :string {format: "yyyy/MM/dd"} when payload01.EmailBouncedDate != null otherwise '',
+emailBouncedReason : payload01.EmailBouncedReason,
+fax : payload01.Fax,
+firstName : payload01.FirstName,
+homePhone : payload01.HomePhone,
+id : payload01.Id,
+isDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '',
+isEmailBounced : payload01.IsEmailBounced as :string when payload01.IsEmailBounced != null otherwise '',
+jigsaw : payload01.Jigsaw,
+jigsawContactId : payload01.JigsawContactId,
+lastActivityDate : payload01.LastActivityDate as :string {format: "yyyy/MM/dd"} when payload01.LastActivityDate != null otherwise '',
+lastCURequestDate : payload01.LastCURequestDate as :string {format: "yyyy/MM/dd"} when payload01.LastCURequestDate != null otherwise '',
+lastCUUpdateDate : payload01.LastCUUpdateDate as :string {format: "yyyy/MM/dd"} when payload01.LastCUUpdateDate != null otherwise '',
+lastModifiedById : payload01.LastModifiedById,
+lastModifiedDate : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+lastName : payload01.LastName,
+lastReferencedDate : payload01.LastReferencedDate as :string {format: "yyyy/MM/dd"} when payload01.LastReferencedDate != null otherwise '',
+lastViewedDate : payload01.LastViewedDate as :string {format: "yyyy/MM/dd"} when payload01.LastViewedDate != null otherwise '',
+leadSource : payload01.LeadSource,
+mailingAddress : payload01.MailingAddress,
+mailingCity : payload01.MailingCity,
+mailingCountry : payload01.MailingCountry,
+mailingLatitude : payload01.MailingLatitude as :string when payload01.MailingLatitude != null otherwise '',
+mailingLongitude : payload01.MailingLongitude as :string when payload01.MailingLongitude != null otherwise '',
+mailingPostalCode : payload01.MailingPostalCode,
+mailingState : payload01.MailingState,
+mailingStreet : payload01.MailingStreet,
+masterRecordId : payload01.MasterRecordId,
+mobilePhone : payload01.MobilePhone,
+name : payload01.Name,
+otherAddress : payload01.OtherAddress,
+otherCity : payload01.OtherCity,
+otherLatitude : payload01.OtherLatitude as :string when payload01.OtherLatitude != null otherwise '',
+otherLongitude : payload01.OtherLongitude as :string when payload01.OtherLongitude != null otherwise '',
+otherPhone : payload01.OtherPhone,
+otherPostalCode : payload01.OtherPostalCode,
+otherState : payload01.OtherState,
+otherStreet : payload01.OtherStreet,
+ownerId : payload01.OwnerId,
+phone : payload01.Phone,
+photoUrl : payload01.PhotoUrl,
+recordTypeId : payload01.RecordTypeId,
+reportsToId : payload01.ReportsToId,
+salutation : payload01.Salutation,
+systemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '',
+title : payload01.Title,
+abc_Reporting_Region : payload01.ABC_Reporting_Region__c,
+accountId_c : payload01.AccountId__c,
+accountName : payload01.AccountName__c,
+address_Code_Generated : payload01.Address_Code_Generated__c,
+address_Code_Migrated : payload01.Address_Code_Migrated__c,
+address_Code : payload01.Address_Code__c,
+address_DOB_Key : payload01.Address_DOB_Key__c,
+address_Key : payload01.Address_Key__c,
+allow_Cross_Region_Address_Update : payload01.Allow_Cross_Region_Address_Update__c as :string when payload01.Allow_Cross_Region_Address_Update__c != null otherwise '',
+contact_Preference : payload01.Contact_Preference__c,
+country_Code : payload01.Country_Code__c,
+country_Region : payload01.Country_Region__c,
+dispatch_Code : payload01.Dispatch_Code__c,
+dispatch_Name : payload01.Dispatch_Name__c,
+do_Not_Communicate : payload01.Do_Not_Communicate__c as :string when payload01.Do_Not_Communicate__c != null otherwise '',
+email_Bounced : payload01.Email_Bounced__c as :string when payload01.Email_Bounced__c != null otherwise '',
+email_DOB_Key : payload01.Email_DOB_Key__c,
+email_Key : payload01.Email_Key__c,
+fulfilment_Region : payload01.Fulfilment_Region__c,
+ipc_Email_Opt_Out : payload01.IPC_Email_Opt_Out__c,
+ipc_Mobile_Opt_Out : payload01.IPC_Mobile_Opt_Out__c,
+ipc_Phone_or_Post_Opt_Out : payload01.IPC_Phone_or_Post_Opt_Out__c,
+is_CBA : payload01.Is_CBA__c as :string when payload01.Is_CBA__c != null otherwise '',
+job_Title : payload01.Job_Title__c,
+mailing_Address_Formatted : payload01.Mailing_Address_Formatted__c,
+mbile_Key : payload01.Mobile_Key__c,
+preferred_Postal_Service_Provider : payload01.Preferred_Postal_Service_Provider__c,
+pricing_Region : payload01.Pricing_Region__c,
+qSSCountryName : payload01.QSSCountryName__c,
+qSS_Code : payload01.QSS_Code__c,
+reader_Code_Generated : payload01.Reader_Code_Generated__c,
+reader_Code_Migrated : payload01.Reader_Code_Migrated__c,
+reader_Code : payload01.Reader_Code__c,
+salutation_c : payload01.Salutation__c,
+security_Answer_1 : payload01.Security_Answer_1__c,
+security_Question_1 : payload01.Security_Question_1__c,
+third_Party_Email_Opt_Out : payload01.Third_Party_Email_Opt_Out__c,
+third_Party_Mobile_Opt_Out : payload01.Third_Party_Mobile_Opt_Out__c,
+third_Party_Phone_or_Post_Opt_Out : payload01.Third_Party_Phone_or_Post_Opt_Out__c,
+unnamed : payload01.Unnamed__c as :string when payload01.Unnamed__c != null otherwise '',
+vat_Registration_No : payload01.VAT_Registration_No__c,
+zuora_Rate_Plan_Region : payload01.Zuora_Rate_Plan_Region__c,
+zquounty : payload01.zqu__County__c,
+therCountry : payload01.OtherCountry
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <dw:transform-message doc:name="POJO to CSV" metadata:id="0f3f5b3b-3e81-43e6-a99b-3a5798ee352e">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+AccountId : payload01.accountId,
+AssistantName : payload01.assistantName,
+AssistantPhone : payload01.assistantPhone,
+Birthdate : payload01.birthdate,
+CreatedById : payload01.createdById,
+CreatedDate : payload01.createdDate,
+CurrencyIsoCode : payload01.currencyIsoCode,
+Department : payload01.department,
+Description : payload01.description,
+Email : payload01.email,
+EmailBouncedDate : payload01.emailBouncedDate,
+EmailBouncedReason : payload01.emailBouncedReason,
+Fax : payload01.fax,
+FirstName : payload01.firstName,
+HomePhone : payload01.homePhone,
+Id : payload01.id,
+IsDeleted : payload01.isDeleted,
+IsEmailBounced : payload01.isEmailBounced,
+Jigsaw : payload01.jigsaw,
+JigsawContactId : payload01.jigsawContactId,
+LastActivityDate : payload01.lastActivityDate,
+LastCURequestDate : payload01.lastCURequestDate,
+LastCUUpdateDate : payload01.lastCUUpdateDate,
+LastModifiedById : payload01.lastModifiedById,
+LastModifiedDate : payload01.lastModifiedDate,
+LastName : payload01.lastName,
+LastReferencedDate : payload01.lastReferencedDate,
+LastViewedDate : payload01.lastViewedDate,
+LeadSource : payload01.leadSource,
+MailingCity : payload01.mailingCity,
+MailingCountry : payload01.mailingCountry,
+MailingLatitude : payload01.mailingLatitude,
+MailingLongitude : payload01.mailingLongitude,
+MailingPostalCode : payload01.mailingPostalCode,
+MailingState : payload01.mailingState,
+MailingStreet : payload01.mailingStreet,
+MasterRecordId : payload01.masterRecordId,
+MobilePhone : payload01.mobilePhone,
+Name : payload01.name,
+OtherAddress : payload01.otherAddress,
+OtherCity : payload01.otherCity,
+OtherLatitude : payload01.otherLatitude,
+OtherLongitude : payload01.otherLongitude,
+OtherPhone : payload01.otherPhone,
+OtherPostalCode : payload01.otherPostalCode,
+OtherState : payload01.otherState,
+OtherStreet : payload01.otherStreet,
+OwnerId : payload01.ownerId,
+Phone : payload01.phone,
+PhotoUrl : payload01.photoUrl,
+RecordTypeId : payload01.recordTypeId,
+ReportsToId : payload01.reportsToId,
+Salutation : payload01.salutation,
+SystemModstamp : payload01.systemModstamp,
+Title : payload01.title,
+ABC_Reporting_Region__c : payload01.abc_Reporting_Region,
+AccountId__c : payload01.accountId_c,
+AccountName__c : payload01.accountName,
+Address_Code__c : payload01.address_Code,
+Address_Code_Generated__c : payload01.address_Code_Generated,
+Address_Code_Migrated__c : payload01.address_Code_Migrated,
+Address_DOB_Key__c : payload01.address_DOB_Key,
+Address_Key__c : payload01.address_Key,
+Allow_Cross_Region_Address_Update__c : payload01.allow_Cross_Region_Address_Update,
+Contact_Preference__c : payload01.contact_Preference,
+Country_Code__c : payload01.country_Code,
+Country_Region__c : payload01.country_Region,
+Dispatch_Code__c : payload01.dispatch_Code,
+Dispatch_Name__c : payload01.dispatch_Name,
+Do_Not_Communicate__c : payload01.do_Not_Communicate,
+Email_Bounced__c : payload01.email_Bounced,
+Email_DOB_Key__c : payload01.email_DOB_Key,
+Email_Key__c : payload01.email_Key,
+Fulfilment_Region__c : payload01.fulfilment_Region,
+IPC_Email_Opt_Out__c : payload01.ipc_Email_Opt_Out,
+IPC_Mobile_Opt_Out__c : payload01.ipc_Mobile_Opt_Out,
+IPC_Phone_or_Post_Opt_Out__c : payload01.ipc_Phone_or_Post_Opt_Out,
+Is_CBA__c : payload01.is_CBA,
+Job_Title__c : payload01.job_Title,
+MailingAddress_city : payload01.mailingCity,
+MailingAddress_country : payload01.mailingCountry,
+MailingAddress_latitude : payload01.mailingLatitude,
+MailingAddress_longitude : payload01.mailingLongitude,
+MailingAddress_postalCode : payload01.mailingPostalCode,
+MailingAddress_state : payload01.mailingState,
+MailingAddress_street : payload01.mailingStreet,
+Mailing_Address_Formatted__c : payload01.mailing_Address_Formatted,
+Mobile_Key__c : payload01.mbile_Key,
+Preferred_Postal_Service_Provider__c : payload01.preferred_Postal_Service_Provider,
+Pricing_Region__c : payload01.pricing_Region,
+QSSCountryName__c : payload01.qSSCountryName,
+QSS_Code__c : payload01.qSS_Code,
+Reader_Code__c : payload01.reader_Code,
+Reader_Code_Generated__c : payload01.reader_Code_Generated,
+Reader_Code_Migrated__c : payload01.reader_Code_Migrated,
+Salutation__c : payload01.salutation_c,
+Security_Answer_1__c : payload01.security_Answer_1,
+Security_Question_1__c : payload01.security_Question_1,
+OtherCountry : payload01.therCountry,
+Third_Party_Email_Opt_Out__c : payload01.third_Party_Email_Opt_Out,
+Third_Party_Phone_or_Post_Opt_Out__c : payload01.third_Party_Phone_or_Post_Opt_Out,
+Third_Party_Mobile_Opt_Out__c : payload01.third_Party_Mobile_Opt_Out,
+Unnamed__c : payload01.unnamed,
+VAT_Registration_No__c : payload01.vat_Registration_No,
+zqu__County__c : payload01.zquounty,
+Zuora_Rate_Plan_Region__c : payload01.zuora_Rate_Plan_Region
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_SUBS_PROD_CHARGE" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT Balance_Amount_Left__c,ContactPreferredPostalServiceProviderId__c,Copies__c,CreatedById,CreatedDate,CurrencyIsoCode,Edition__c,Id,IsDeleted,Issues_Fulfilled__c,Issues_Total__c,LastActivityDate,LastModifiedById,LastModifiedDate,Name,OwnerId,Publication_Id__c,Sold_To_Contact__c,Subscription_End_Date__c,SystemModstamp,Zuora__Account__c,Zuora__AccountingCode__c,Zuora__BillingPeriodStartDay__c,Zuora__BillingPeriod__c,Zuora__ChargeNumber__c,Zuora__Description__c,Zuora__EffectiveEndDate__c,Zuora__EffectiveStartDate__c,Zuora__ExtendedAmount__c,Zuora__External_Id__c,Zuora__Model__c,Zuora__MonthlyRecurringRevenue__c,Zuora__PriceTable__c,Zuora__Price__c,Zuora__ProductDescription__c,Zuora__ProductEffectiveEndDate_Product__c,Zuora__ProductEffectiveEndDate__c,Zuora__ProductName_Product__c,Zuora__ProductName__c,Zuora__ProductSKU_Product__c,Zuora__ProductSKU__c,Zuora__Product__c,Zuora__Quantity__c,Zuora__RatePlanDescription__c,Zuora__RatePlanEffectiveEndDate__c,Zuora__RatePlanId__c,Zuora__RatePlanName__c,Zuora__Subscription__c,Zuora__TotalContractValue__c,Zuora__Type__c,Zuora__UOM__c,Zuora__UOM_formula__c,Zuora__UnitOfMeasure__c,Zuora__Zuora_Id__c FROM Zuora__SubscriptionProductCharge__c WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="List&lt;Zuora__SubscriptionProductCharge__c&gt; To CSV" metadata:id="7c2fa4d5-e3e8-465e-bc2f-0183d48ae80d">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+Balance_Amount_Left__c : payload01.Balance_Amount_Left__c as :string when payload01.Balance_Amount_Left__c != null otherwise '',
+ContactPreferredPostalServiceProviderId__c : payload01.ContactPreferredPostalServiceProviderId__c,
+Copies__c : payload01.Copies__c as :string when payload01.Copies__c != null otherwise '',
+CreatedById : payload01.CreatedById,
+CreatedDate : payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+CurrencyIsoCode : payload01.CurrencyIsoCode,
+Edition__c : payload01.Edition__c,
+Id : payload01.Id,
+IsDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '',
+Issues_Fulfilled__c : payload01.Issues_Fulfilled__c as :string when payload01.Issues_Fulfilled__c != null otherwise '',
+Issues_Total__c : payload01.Issues_Total__c as :string when payload01.Issues_Total__c != null otherwise '',
+LastActivityDate : payload01.LastActivityDate as :string {format: "yyyy/MM/dd"} when payload01.LastActivityDate != null otherwise '',
+LastModifiedById : payload01.LastModifiedById,
+LastModifiedDate : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+Name : payload01.Name,
+OwnerId : payload01.OwnerId,
+Publication_Id__c : payload01.Publication_Id__c,
+Sold_To_Contact__c : payload01.Sold_To_Contact__c,
+Subscription_End_Date__c : payload01.Subscription_End_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Subscription_End_Date__c != null otherwise '',
+SystemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '',
+Zuora__Account__c : payload01.Zuora__Account__c,
+Zuora__AccountingCode__c : payload01.Zuora__AccountingCode__c,
+Zuora__BillingPeriodStartDay__c : payload01.Zuora__BillingPeriodStartDay__c,
+Zuora__BillingPeriod__c : payload01.Zuora__BillingPeriod__c,
+Zuora__ChargeNumber__c : payload01.Zuora__ChargeNumber__c,
+Zuora__Description__c : payload01.Zuora__Description__c,
+Zuora__ExtendedAmount__c : payload01.Zuora__ExtendedAmount__c,
+Zuora__External_Id__c : payload01.Zuora__External_Id__c,
+Zuora__Model__c : payload01.Zuora__Model__c,
+Zuora__MonthlyRecurringRevenue__c : payload01.Zuora__MonthlyRecurringRevenue__c,
+Zuora__PriceTable__c : payload01.Zuora__PriceTable__c,
+Zuora__Price__c : payload01.Zuora__Price__c,
+Zuora__ProductDescription__c : payload01.Zuora__ProductDescription__c,
+Zuora__ProductEffectiveEndDate_Product__c : payload01.Zuora__ProductEffectiveEndDate_Product__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__ProductEffectiveEndDate_Product__c != null otherwise '',
+Zuora__ProductEffectiveEndDate__c : payload01.Zuora__ProductEffectiveEndDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__ProductEffectiveEndDate__c != null otherwise '',
+Zuora__ProductName_Product__c : payload01.Zuora__ProductName_Product__c,
+Zuora__ProductName__c : payload01.Zuora__ProductName__c,
+Zuora__ProductSKU_Product__c : payload01.Zuora__ProductSKU_Product__c,
+Zuora__ProductSKU__c : payload01.Zuora__ProductSKU__c,
+Zuora__Product__c : payload01.Zuora__Product__c,
+Zuora__Quantity__c : payload01.Zuora__Quantity__c as :string when payload01.Zuora__Quantity__c != null otherwise '',
+Zuora__RatePlanDescription__c : payload01.Zuora__RatePlanDescription__c,
+Zuora__RatePlanEffectiveEndDate__c : payload01.Zuora__RatePlanEffectiveEndDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__RatePlanEffectiveEndDate__c != null otherwise '',
+Zuora__RatePlanId__c : payload01.Zuora__RatePlanId__c,
+Zuora__RatePlanName__c : payload01.Zuora__RatePlanName__c,
+Zuora__Subscription__c : payload01.Zuora__Subscription__c,
+Zuora__TotalContractValue__c : payload01.Zuora__TotalContractValue__c,
+Zuora__Type__c : payload01.Zuora__Type__c,
+Zuora__UOM__c : payload01.Zuora__UOM__c,
+Zuora__UOM_formula__c : payload01.Zuora__UOM_formula__c,
+Zuora__UnitOfMeasure__c : payload01.Zuora__UnitOfMeasure__c,
+Zuora__Zuora_Id__c : payload01.Zuora__Zuora_Id__c,
+ZuoractiveEndDate__c : payload01.Zuora__EffectiveEndDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__EffectiveEndDate__c != null otherwise '',
+ZuoractiveStartDate__c : payload01.Zuora__EffectiveStartDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__EffectiveStartDate__c != null otherwise ''
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_SCHEDULED_ISSUE" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT ABC_Audit_LabelReport_Done_On__c,Additional_Stock__c,Calculated_Close_Date__c,Close_Date__c,Copies_Archived_On__c,Cover_Date__c,CreatedById,CreatedDate,Critical_Date__c,CurrencyIsoCode,Default_UK_Postal_Service_Provider__c,Export_Mailing_House__c,Export_Postal_Service_Provider__c,Fulfilled__c,Id,IsDeleted,Issue_Cover_Date__c,Issue_Status__c,LabelRunStage__c,Label_Report_Done_On__c,Label_Run_Error__c,Label_Run_date__c,LastModifiedById,LastModifiedDate,LastReferencedDate,LastViewedDate,Mailing_Date__c,Mailing_House_Delivery_Date__c,Name,Non_New_Schedules_Count__c,On_Sale_Date__c,Oracle_Reference_Number__c,Orion_Reference_Number__c,Preferred_UK_Postal_Service_Provider__c,PrintOrderDoneOn__c,Print_Audit_File_Done_On__c,Print_Order_Date__c,Print_Overrun__c,Print_overrun_Export_surplus__c,Printed_Copies_Count__c,Publication__c,QSS_Reference_Number__c,Remaining_Print_Copies__c,Shipped_Copies_Count__c,Special_Comments__c,Surplus_Stock__c,SystemModstamp,TotalAdditionalStock__c,TotalCopiesUsedFromAdditionalStock__c,TotalPrintOrder__c,TotalStockLeft__c,Total_Print_Order_Recieved__c,Total_Print_Order__c,Total_Subscriptions_till_Print_Date__c,UK_Mailing_House__c FROM Issue__c WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="List&lt;Issue__c&gt; To CSV" metadata:id="379a50c4-5e93-4998-9360-4a8602a9a0ec">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+ABC_Audit_LabelReport_Done_On__c : payload01.ABC_Audit_LabelReport_Done_On__c as :string {format: "yyyy/MM/dd"} when payload01.ABC_Audit_LabelReport_Done_On__c != null otherwise '',
+Additional_Stock__c : payload01.Additional_Stock__c as :string when payload01.Additional_Stock__c != null otherwise '',
+Calculated_Close_Date__c : payload01.Calculated_Close_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Calculated_Close_Date__c != null otherwise '',
+Close_Date__c : payload01.Close_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Close_Date__c != null otherwise '',
+Copies_Archived_On__c : payload01.Copies_Archived_On__c as :string {format: "yyyy/MM/dd"} when payload01.Copies_Archived_On__c != null otherwise '',
+Cover_Date__c : payload01.Cover_Date__c,
+CreatedById : payload01.CreatedById,
+CreatedDate : payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+Critical_Date__c : payload01.Critical_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Critical_Date__c != null otherwise '',
+CurrencyIsoCode : payload01.CurrencyIsoCode,
+Default_UK_Postal_Service_Provider__c : payload01.Default_UK_Postal_Service_Provider__c,
+Export_Mailing_House__c : payload01.Export_Mailing_House__c,
+Export_Postal_Service_Provider__c : payload01.Export_Postal_Service_Provider__c,
+Fulfilled__c : payload01.Fulfilled__c as :string when payload01.Fulfilled__c != null otherwise '',
+Id : payload01.Id,
+IsDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '',
+Issue_Cover_Date__c : payload01.Issue_Cover_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Issue_Cover_Date__c != null otherwise '',
+Issue_Status__c : payload01.Issue_Status__c,
+LabelRunStage__c : payload01.LabelRunStage__c,
+Label_Report_Done_On__c : payload01.Label_Report_Done_On__c as :string {format: "yyyy/MM/dd"} when payload01.Label_Report_Done_On__c != null otherwise '',
+Label_Run_Error__c : payload01.Label_Run_Error__c,
+Label_Run_date__c : payload01.Label_Run_date__c as :string {format: "yyyy/MM/dd"} when payload01.Label_Run_date__c != null otherwise '',
+LastModifiedById : payload01.LastModifiedById,
+LastModifiedDate : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+LastReferencedDate : payload01.LastReferencedDate as :string {format: "yyyy/MM/dd"} when payload01.LastReferencedDate != null otherwise '',
+LastViewedDate : payload01.LastViewedDate as :string {format: "yyyy/MM/dd"} when payload01.LastViewedDate != null otherwise '',
+Mailing_Date__c : payload01.Mailing_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Mailing_Date__c != null otherwise '',
+Mailing_House_Delivery_Date__c : payload01.Mailing_House_Delivery_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Mailing_House_Delivery_Date__c != null otherwise '',
+Name : payload01.Name,
+Non_New_Schedules_Count__c : payload01.Non_New_Schedules_Count__c as :string when payload01.Non_New_Schedules_Count__c != null otherwise '',
+On_Sale_Date__c : payload01.On_Sale_Date__c as :string {format: "yyyy/MM/dd"} when payload01.On_Sale_Date__c != null otherwise '',
+Oracle_Reference_Number__c : payload01.Oracle_Reference_Number__c,
+Orion_Reference_Number__c : payload01.Orion_Reference_Number__c,
+Preferred_UK_Postal_Service_Provider__c : payload01.Preferred_UK_Postal_Service_Provider__c,
+PrintOrderDoneOn__c : payload01.PrintOrderDoneOn__c as :string {format: "yyyy/MM/dd"} when payload01.PrintOrderDoneOn__c != null otherwise '',
+Print_Audit_File_Done_On__c : payload01.Print_Audit_File_Done_On__c as :string {format: "yyyy/MM/dd"} when payload01.Print_Audit_File_Done_On__c != null otherwise '',
+Print_Order_Date__c : payload01.Print_Order_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Print_Order_Date__c != null otherwise '',
+Print_Overrun__c : payload01.Print_Overrun__c as :string when payload01.Print_Overrun__c != null otherwise '',
+Print_overrun_Export_surplus__c : payload01.Print_overrun_Export_surplus__c as :string when payload01.Print_overrun_Export_surplus__c != null otherwise '',
+Printed_Copies_Count__c : payload01.Printed_Copies_Count__c as :string when payload01.Printed_Copies_Count__c != null otherwise '',
+Publication__c : payload01.Publication__c,
+QSS_Reference_Number__c : payload01.QSS_Reference_Number__c,
+Remaining_Print_Copies__c : payload01.Remaining_Print_Copies__c as :string when payload01.Remaining_Print_Copies__c != null otherwise '',
+Shipped_Copies_Count__c : payload01.Shipped_Copies_Count__c as :string when payload01.Shipped_Copies_Count__c != null otherwise '',
+Special_Comments__c : payload01.Special_Comments__c,
+Surplus_Stock__c : payload01.Surplus_Stock__c as :string when payload01.Surplus_Stock__c != null otherwise '',
+SystemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '',
+TotalAdditionalStock__c : payload01.TotalAdditionalStock__c as :string when payload01.TotalAdditionalStock__c != null otherwise '',
+TotalCopiesUsedFromAdditionalStock__c : payload01.TotalCopiesUsedFromAdditionalStock__c as :string when payload01.TotalCopiesUsedFromAdditionalStock__c != null otherwise '',
+TotalPrintOrder__c : payload01.TotalPrintOrder__c as :string when payload01.TotalPrintOrder__c != null otherwise '',
+TotalStockLeft__c : payload01.TotalStockLeft__c as :string when payload01.TotalStockLeft__c != null otherwise '',
+Total_Print_Order_Recieved__c : payload01.Total_Print_Order_Recieved__c as :string when payload01.Total_Print_Order_Recieved__c != null otherwise '',
+Total_Print_Order__c : payload01.Total_Print_Order__c as :string when payload01.Total_Print_Order__c != null otherwise '',
+Total_Subscriptions_till_Print_Date__c : payload01.Total_Subscriptions_till_Print_Date__c as :string when payload01.Total_Subscriptions_till_Print_Date__c != null otherwise '',
+UK_Mailing_House__c : payload01.UK_Mailing_House__c
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_SUBS_ISSUE_SCHED" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT AmountPaidForDigitalInBARCurrency__c,AmountPaidForPrintInBARCurrency__c,AmountPaidInBARCurrency__c,AmountPaid__c,BARCurrencyDigital__c,BARCurrency__c,BARPercentDigital__c,BARPercent__c,BaseBARRateDigital__c,BaseBARRate__c,BaseSubscriptionId__c,Contact__c,CreatedById,CreatedDate,CurrencyBasedBARDigital__c,CurrencyBasedBAR__c,CurrencyIsoCode,CurrentIssue__c,DigitalPrice__c,Edition__c,EndIssue__c,FXRateDigital__c,FXRate__c,FirstIssue__c,FreeCodes__c,FulfilmentHistory__c,FutureCopyRecordIds__c,Id,IsDeleted,LastActivityDate,LastModifiedById,LastModifiedDate,LastProcessedDateTime__c,Name,NextIssue__c,NumberOfIssuesFulfilled__c,OwnerId,PastCopyRecordIds__c,PricePerDigitalCopy__c,PricePerPrintCopy__c,PrintPrice__c,PublicationId__c,PublicationName__c,ReplacedCopyRecordIds__c,ReplacementHistory__c,Status__c,SubscriberCPS__c,SystemModstamp,TermEndDate__c,TermStartDate__c,ToBeReplacedCopyRecordIds__c,TotalNumberOfIssues__c,UniqueIdentifier__c,ZuoraDigitalSubscriptionChargeName__c,ZuoraPrintSubscriptionChargeName__c,ZuoraSubscriptionId__c,ZuoraSubscriptionName__c FROM Subscriber_Issue_Schedule__c WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="d86b08cd-3434-406c-8ada-0bcfa828f0b3">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+AmountPaidForDigitalInBARCurrency__c : payload01.AmountPaidForDigitalInBARCurrency__c as :string when payload01.AmountPaidForDigitalInBARCurrency__c != null otherwise '',
+AmountPaidForPrintInBARCurrency__c : payload01.AmountPaidForPrintInBARCurrency__c as :string when payload01.AmountPaidForPrintInBARCurrency__c != null otherwise '',
+AmountPaidInBARCurrency__c : payload01.AmountPaidInBARCurrency__c as :string when payload01.AmountPaidInBARCurrency__c != null otherwise '',
+AmountPaid__c : payload01.AmountPaid__c as :string when payload01.AmountPaid__c != null otherwise '',
+BARCurrencyDigital__c : payload01.BARCurrencyDigital__c,
+BARCurrency__c : payload01.BARCurrency__c,
+BARPercentDigital__c : payload01.BARPercentDigital__c as :string when payload01.BARPercentDigital__c != null otherwise '',
+BARPercent__c : payload01.BARPercent__c as :string when payload01.BARPercent__c != null otherwise '',
+BaseBARRateDigital__c : payload01.BaseBARRateDigital__c as :string when payload01.BaseBARRateDigital__c != null otherwise '',
+BaseBARRate__c : payload01.BaseBARRate__c as :string when payload01.BaseBARRate__c != null otherwise '',
+BaseSubscriptionId__c : payload01.BaseSubscriptionId__c,
+Contact__c : payload01.Contact__c,
+CreatedById : payload01.CreatedById,
+CreatedDate : payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+CurrencyBasedBARDigital__c : payload01.CurrencyBasedBARDigital__c as :string when payload01.CurrencyBasedBARDigital__c != null otherwise '',
+CurrencyBasedBAR__c : payload01.CurrencyBasedBAR__c as :string when payload01.CurrencyBasedBAR__c != null otherwise '',
+CurrencyIsoCode : payload01.CurrencyIsoCode,
+CurrentIssue__c : payload01.CurrentIssue__c,
+DigitalPrice__c : payload01.DigitalPrice__c,
+Edition__c : payload01.Edition__c,
+EndIssue__c : payload01.EndIssue__c,
+FXRateDigital__c : payload01.FXRateDigital__c as :string when payload01.FXRateDigital__c != null otherwise '',
+FXRate__c : payload01.FXRate__c as :string when payload01.FXRate__c != null otherwise '',
+FirstIssue__c : payload01.FirstIssue__c,
+FreeCodes__c : payload01.FreeCodes__c,
+FulfilmentHistory__c : payload01.FulfilmentHistory__c,
+FutureCopyRecordIds__c : payload01.FutureCopyRecordIds__c,
+Id : payload01.Id,
+IsDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '',
+LastActivityDate : payload01.LastActivityDate as :string {format: "yyyy/MM/dd"} when payload01.LastActivityDate != null otherwise '',
+LastModifiedById : payload01.LastModifiedById,
+LastModifiedDate : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+LastProcessedDateTime__c : payload01.LastProcessedDateTime__c as :string {format: "yyyy/MM/dd"} when payload01.LastProcessedDateTime__c != null otherwise '',
+Name : payload01.Name,
+NextIssue__c : payload01.NextIssue__c,
+NumberOfIssuesFulfilled__c : payload01.NumberOfIssuesFulfilled__c as :string when payload01.NumberOfIssuesFulfilled__c != null otherwise '',
+OwnerId : payload01.OwnerId,
+PastCopyRecordIds__c : payload01.PastCopyRecordIds__c,
+PricePerDigitalCopy__c : payload01.PricePerDigitalCopy__c,
+PricePerPrintCopy__c : payload01.PricePerPrintCopy__c,
+PrintPrice__c : payload01.PrintPrice__c,
+PublicationId__c : payload01.PublicationId__c,
+PublicationName__c : payload01.PublicationName__c,
+ReplacedCopyRecordIds__c : payload01.ReplacedCopyRecordIds__c,
+ReplacementHistory__c : payload01.ReplacementHistory__c,
+Status__c : payload01.Status__c,
+SubscriberCPS__c : payload01.SubscriberCPS__c,
+SystemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '',
+TermEndDate__c : payload01.TermEndDate__c as :string {format: "yyyy/MM/dd"} when payload01.TermEndDate__c != null otherwise '',
+TermStartDate__c : payload01.TermStartDate__c as :string {format: "yyyy/MM/dd"} when payload01.TermStartDate__c != null otherwise '',
+ToBeReplacedCopyRecordIds__c : payload01.ToBeReplacedCopyRecordIds__c,
+TotalNumberOfIssues__c : payload01.TotalNumberOfIssues__c as :string when payload01.TotalNumberOfIssues__c != null otherwise '',
+UniqueIdentifier__c : payload01.UniqueIdentifier__c,
+ZuoraDigitalSubscriptionChargeName__c : payload01.ZuoraDigitalSubscriptionChargeName__c,
+ZuoraPrintSubscriptionChargeName__c : payload01.ZuoraPrintSubscriptionChargeName__c,
+ZuoraSubscriptionId__c : payload01.ZuoraSubscriptionId__c,
+ZuoraSubscriptionName__c : payload01.ZuoraSubscriptionName__c
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_PROMOTION" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT Campaign_Code__c,Campaign_Name__c,Campaign__c,Close_Date__c,CreatedById,CreatedDate,CurrencyIsoCode,Date_Code_Briefed__c,Default__c,Designed_By__c,DonorStartIssue__c,First_Issue_It_Appears__c,Friendly_URL__c,Full_Description_of_Gift__c,Gift_Destination__c,Gift_Included__c,Gift_Name__c,Gift_Offer_Code__c,Gift_Shipping_Date__c,Gift_Stock_Limit__c,Gift_Supplier__c,Host_Title_Code__c,Id,Insert_Size__c,IsDeleted,LastModifiedById,LastModifiedDate,LastReferencedDate,LastViewedDate,Long_URL__c,Magazine_size__c,Minimum_Term__c,Name,Offline_Audience__c,Outgoing_Channel__c,OwnerId,Package__c,Port_Insert_Creative__c,Pricing_Bundle__c,Pricing_Digital__c,Pricing_Print__c,Product_Activity__c,Promotion_Commercial_Code__c,Promotion_Duration__c,Promotion_Name_Description__c,Promotion_Type__c,Publication__c,Report_Description__c,Short_URL__c,Specific_Start_Issue__c,Start_Issue__c,SystemModstamp,Title_Being_Promoted_Name__c,Title_Hosting_The_Promotion__c,Title_being_Promoted_Code__c,Website__c,X_4_X_Promotion__c FROM Promotion__c WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="List&lt;Promotion__c&gt; To CSV" metadata:id="1b95473b-8f8f-4e8f-bf48-a7e65a879f24">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+CAMPAIGN_CODE__C : payload01.Campaign_Code__c,
+CAMPAIGN_NAME__C : payload01.Campaign_Name__c,
+CAMPAIGN__C : payload01.Campaign__c,
+CLOSE_DATE__C : payload01.Close_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Close_Date__c != null otherwise '',
+CREATEDBYID : payload01.CreatedById,
+CREATEDDATE : payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+CURRENCYISOCODE : payload01.CurrencyIsoCode,
+DATE_CODE_BRIEFED__C : payload01.Date_Code_Briefed__c as :string {format: "yyyy/MM/dd"} when payload01.Date_Code_Briefed__c != null otherwise '',
+DEFAULT__C : payload01.Default__c as :string when payload01.Default__c != null otherwise '',
+DESIGNED_BY__C : payload01.Designed_By__c,
+DONORSTARTISSUE__C : payload01.DonorStartIssue__c,
+FIRST_ISSUE_IT_APPEARS__C : payload01.First_Issue_It_Appears__c,
+FRIENDLY_URL__C : payload01.Friendly_URL__c,
+FULL_DESCRIPTION_OF_GIFT__C : payload01.Full_Description_of_Gift__c,
+GIFT_DESTINATION__C : payload01.Gift_Destination__c,
+GIFT_INCLUDED__C : payload01.Gift_Included__c,
+GIFT_NAME__C : payload01.Gift_Name__c,
+GIFT_OFFER_CODE__C : payload01.Gift_Offer_Code__c,
+GIFT_SHIPPING_DATE__C : payload01.Gift_Shipping_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Gift_Shipping_Date__c != null otherwise '',
+GIFT_STOCK_LIMIT__C : payload01.Gift_Stock_Limit__c as :string when payload01.Gift_Stock_Limit__c != null otherwise '',
+GIFT_SUPPLIER__C : payload01.Gift_Supplier__c,
+HOST_TITLE_CODE__C : payload01.Host_Title_Code__c,
+ID : payload01.Id,
+INSERT_SIZE__C : payload01.Insert_Size__c,
+ISDELETED : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '',
+LASTMODIFIEDBYID : payload01.LastModifiedById,
+LASTMODIFIEDDATE : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+LONG_URL__C : payload01.Long_URL__c,
+MAGAZINE_SIZE__C : payload01.Magazine_size__c,
+MINIMUM_TERM__C : payload01.Minimum_Term__c,
+NAME : payload01.Name,
+OFFLINE_AUDIENCE__C : payload01.Offline_Audience__c,
+OUTGOING_CHANNEL__C : payload01.Outgoing_Channel__c,
+OWNERID : payload01.OwnerId,
+PACKAGE__C : payload01.Package__c,
+PORT_INSERT_CREATIVE__C : payload01.Port_Insert_Creative__c,
+PRICING_BUNDLE__C : payload01.Pricing_Bundle__c,
+PRICING_DIGITAL__C : payload01.Pricing_Digital__c,
+PRICING_PRINT__C : payload01.Pricing_Print__c,
+PRODUCT_ACTIVITY__C : payload01.Product_Activity__c,
+PROMOTION_COMMERCIAL_CODE__C : payload01.Promotion_Commercial_Code__c,
+PROMOTION_DURATION__C : payload01.Promotion_Duration__c as :string when payload01.Promotion_Duration__c != null otherwise '',
+PROMOTION_NAME_DESCRIPTION__C : payload01.Promotion_Name_Description__c,
+PROMOTION_TYPE__C : payload01.Promotion_Type__c,
+PUBLICATION__C : payload01.Publication__c,
+REPORT_DESCRIPTION__C : payload01.Report_Description__c,
+SHORT_URL__C : payload01.Short_URL__c,
+SPECIFIC_START_ISSUE__C : payload01.Specific_Start_Issue__c,
+START_ISSUE__C : payload01.Start_Issue__c,
+SYSTEMMODSTAMP : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '',
+TITLE_BEING_PROMOTED_NAME__C : payload01.Title_Being_Promoted_Name__c,
+TITLE_HOSTING_THE_PROMOTION__C : payload01.Title_Hosting_The_Promotion__c,
+TITLE_BEING_PROMOTED_CODE__C : payload01.Title_being_Promoted_Code__c,
+WEBSITE__C : payload01.Website__c,
+X_4_X_PROMOTION__C : payload01.X_4_X_Promotion__c
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_OFFER" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT Agent_Discount__c,Agent_Price__c,BAR_Price__c,Band_Name__c,Billing_Frequency_In_Months__c,Close_Date__c,CreatedById,CreatedDate,CurrencyIsoCode,Currency__c,Digital_Offer_Price__c,Edition__c,Gift_Included__c,Id,IsDeleted,LastModifiedById,LastModifiedDate,LastReferencedDate,LastViewedDate,MagsDirectExportStatusIndicator__c,Name,Number_of_Issues__c,Offer_Price__c,Offer_Saving__c,Offer_Term__c,Offer_Type__c,Offer_Unique_Identifier__c,OwnerId,Payment_Type__c,Print_Offer_Price__c,Promotion__c,Rate_Plan__c,Region__c,Saving_Discount__c,SystemModstamp,Title_Name__c,Title__c,X_4_X_Offer_Price__c,X_4_X_Offer_Term__c FROM Offer__c WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="3d922f20-5ccd-4e98-b96f-f5e05e4a01d6">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+Agent_Discount__c : payload01.Agent_Discount__c as :string when payload01.Agent_Discount__c != null otherwise '',
+Agent_Price__c : payload01.Agent_Price__c as :string when payload01.Agent_Price__c != null otherwise '',
+BAR_Price__c : payload01.BAR_Price__c as :string when payload01.BAR_Price__c != null otherwise '',
+Band_Name__c : payload01.Band_Name__c,
+Billing_Frequency_In_Months__c : payload01.Billing_Frequency_In_Months__c as :string when payload01.Billing_Frequency_In_Months__c != null otherwise '',
+Close_Date__c : payload01.Close_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Close_Date__c != null otherwise '',
+CreatedById : payload01.CreatedById,
+CreatedDate : payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+CurrencyIsoCode : payload01.CurrencyIsoCode,
+Currency__c : payload01.Currency__c,
+Digital_Offer_Price__c : payload01.Digital_Offer_Price__c as :string when payload01.Digital_Offer_Price__c != null otherwise '',
+Edition__c : payload01.Edition__c,
+Gift_Included__c : payload01.Gift_Included__c as :string when payload01.Gift_Included__c != null otherwise '',
+Id : payload01.Id,
+IsDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '',
+LastModifiedById : payload01.LastModifiedById,
+LastModifiedDate : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+LastReferencedDate : payload01.LastReferencedDate as :string {format: "yyyy/MM/dd"} when payload01.LastReferencedDate != null otherwise '',
+LastViewedDate : payload01.LastViewedDate as :string {format: "yyyy/MM/dd"} when payload01.LastViewedDate != null otherwise '',
+MagsDirectExportStatusIndicator__c : payload01.MagsDirectExportStatusIndicator__c,
+Name : payload01.Name,
+Number_of_Issues__c : payload01.Number_of_Issues__c as :string when payload01.Number_of_Issues__c != null otherwise '',
+Offer_Price__c : payload01.Offer_Price__c as :string when payload01.Offer_Price__c != null otherwise '',
+Offer_Saving__c : payload01.Offer_Saving__c as :string when payload01.Offer_Saving__c != null otherwise '',
+Offer_Term__c : payload01.Offer_Term__c as :string when payload01.Offer_Term__c != null otherwise '',
+Offer_Type__c : payload01.Offer_Type__c,
+Offer_Unique_Identifier__c : payload01.Offer_Unique_Identifier__c,
+OwnerId : payload01.OwnerId,
+Payment_Type__c : payload01.Payment_Type__c,
+Print_Offer_Price__c : payload01.Print_Offer_Price__c as :string when payload01.Print_Offer_Price__c != null otherwise '',
+Promotion__c : payload01.Promotion__c,
+Rate_Plan__c : payload01.Rate_Plan__c,
+Region__c : payload01.Region__c,
+Saving_Discount__c : payload01.Saving_Discount__c,
+SystemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '',
+Title_Name__c : payload01.Title_Name__c,
+Title__c : payload01.Title__c,
+X_4_X_Offer_Price__c : payload01.X_4_X_Offer_Price__c as :string when payload01.X_4_X_Offer_Price__c != null otherwise '',
+X_4_X_Offer_Term__c : payload01.X_4_X_Offer_Term__c as :string when payload01.X_4_X_Offer_Term__c != null otherwise ''
+
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_OPPORTUNITY" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT AccountId,Account_Name__c,Add_Agent_Discount__c,Affiliate_Id__c,Amount,BillTo_SoldTo_Identical__c,Bill_To_Contact__c,CampaignId,CloseDate,CreatedById,CreatedDate,Credit_Balance__c,CurrencyIsoCode,Description,Electronic_Payment_Method_Exist__c,Electronic_Payment_Method_ID__c,Existing_Billing_Account__c,Existing_Zuora_Bill_To_Contact__c,Existing_Zuora_Sold_To_Contact__c,Fiscal,FiscalQuarter,FiscalYear,ForecastCategory,ForecastCategoryName,Free_Codes__c,HasOpportunityLineItem,Id,Initial_Term__c,Invoice_Target_Date__c,IsClosed,IsDeleted,IsWon,Is_Currency_Changed__c,Is_Extended__c,Issue_Close_Date__c,Lapsed_Subscription__c,LastActivityDate,LastModifiedById,LastModifiedDate,LastReferencedDate,LastViewedDate,LeadSource,Name,NextStep,No_of_Copies__c,Offer__c,Opportunity_Sequence__c,Opportunity_Source__c,Opportunity_Type__c,Order_Reference__c,OwnerId,Payment_Method__c,Payment_Term__c,Pricebook2Id,Probability,Publication_Name__c,Publication__c,Quote_Currency__c,Rate_Plan_ID__c,Reader_Type__c,RecordTypeId,Renewal_Term__c,Renewed_Subscription__c,Sold_To_Contact__c,StageName,Start_Issue__c,Start_Issues_After__c,SystemModstamp,TIFF_Number__c,Term_Type__c,Term__c,Type,Zuora_Existing_Billing_Account_ID__c,zqu__CurrentGenerators__c,zqu__DeliveryInstallationStatus__c,zqu__MainCompetitors__c,zqu__OrderNumber__c,zqu__TrackingNumber__c,zqu__ZuoraConfig__c FROM Opportunity WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="List&lt;Opportunity&gt; To CSV" metadata:id="32a96548-736d-4675-a351-b29c87401550">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+AccountId : payload01.AccountId,
+Account_Name__c : payload01.Account_Name__c,
+Add_Agent_Discount__c : payload01.Add_Agent_Discount__c as :string when payload01.Add_Agent_Discount__c != null otherwise '' ,
+Affiliate_Id__c : payload01.Affiliate_Id__c,
+Amount : payload01.Amount,
+BillTo_SoldTo_Identical__c : payload01.BillTo_SoldTo_Identical__c as :string when payload01.BillTo_SoldTo_Identical__c != null otherwise '' ,
+Bill_To_Contact__c : payload01.Bill_To_Contact__c,
+CampaignId : payload01.CampaignId,
+CloseDate :  payload01.CloseDate as :string {format: "yyyy/MM/dd"} when payload01.CloseDate != null otherwise '',
+CreatedById : payload01.CreatedById,
+CreatedDate :  payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+Credit_Balance__c : payload01.Credit_Balance__c,
+CurrencyIsoCode : payload01.CurrencyIsoCode,
+Description : payload01.Description,
+Electronic_Payment_Method_Exist__c : payload01.Electronic_Payment_Method_Exist__c as :string when payload01.Electronic_Payment_Method_Exist__c != null otherwise '' ,
+Electronic_Payment_Method_ID__c : payload01.Electronic_Payment_Method_ID__c,
+Existing_Billing_Account__c : payload01.Existing_Billing_Account__c,
+Existing_Zuora_Bill_To_Contact__c : payload01.Existing_Zuora_Bill_To_Contact__c,
+Existing_Zuora_Sold_To_Contact__c : payload01.Existing_Zuora_Sold_To_Contact__c,
+Fiscal : payload01.Fiscal,
+FiscalQuarter : payload01.FiscalQuarter as :string when payload01.FiscalQuarter != null otherwise '',
+FiscalYear : payload01.FiscalYear as :string when payload01.FiscalYear != null otherwise '',
+ForecastCategory : payload01.ForecastCategory,
+ForecastCategoryName : payload01.ForecastCategoryName,
+Free_Codes__c : payload01.Free_Codes__c,
+HasOpportunityLineItem : payload01.HasOpportunityLineItem as :string when payload01.HasOpportunityLineItem != null otherwise '' ,
+Id : payload01.Id,
+Initial_Term__c : payload01.Initial_Term__c as :string when payload01.Initial_Term__c != null otherwise '' ,
+Invoice_Target_Date__c :  payload01.Invoice_Target_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Invoice_Target_Date__c != null otherwise '',
+IsClosed : payload01.IsClosed as :string when payload01.IsClosed != null otherwise '' ,
+IsDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '' ,
+IsWon : payload01.IsWon as :string when payload01.IsWon != null otherwise '' ,
+Is_Currency_Changed__c : payload01.Is_Currency_Changed__c as :string {format: "yyyy/MM/dd"} when payload01.Is_Currency_Changed__c != null otherwise '',
+Is_Extended__c : payload01.Is_Extended__c as :string when payload01.Is_Extended__c != null otherwise '' ,
+Issue_Close_Date__c : payload01.Issue_Close_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Issue_Close_Date__c != null otherwise '',
+Lapsed_Subscription__c : payload01.Lapsed_Subscription__c,
+LastActivityDate : payload01.LastActivityDate as :string {format: "yyyy/MM/dd"} when payload01.LastActivityDate != null otherwise '',
+LastModifiedById : payload01.LastModifiedById,
+LastModifiedDate : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '',
+LastReferencedDate :  payload01.LastReferencedDate as :string {format: "yyyy/MM/dd"} when payload01.LastReferencedDate != null otherwise '',
+LastViewedDate : payload01.LastViewedDate as :string {format: "yyyy/MM/dd"} when payload01.LastViewedDate != null otherwise '',
+LeadSource : payload01.LeadSource,
+Name : payload01.Name,
+NextStep : payload01.NextStep,
+No_of_Copies__c : payload01.No_of_Copies__c as :string when payload01.No_of_Copies__c != null otherwise '' ,
+Offer__c : payload01.Offer__c,
+Opportunity_Sequence__c : payload01.Opportunity_Sequence__c,
+Opportunity_Source__c : payload01.Opportunity_Source__c,
+Opportunity_Type__c : payload01.Opportunity_Type__c,
+Order_Reference__c : payload01.Order_Reference__c,
+OwnerId : payload01.OwnerId,
+Payment_Method__c : payload01.Payment_Method__c,
+Payment_Term__c : payload01.Payment_Term__c,
+Pricebook2Id : payload01.Pricebook2Id,
+Probability : payload01.Probability,
+Publication_Name__c : payload01.Publication_Name__c,
+Publication__c : payload01.Publication__c,
+Quote_Currency__c : payload01.Quote_Currency__c,
+Rate_Plan_ID__c : payload01.Rate_Plan_ID__c,
+Reader_Type__c : payload01.Reader_Type__c,
+RecordTypeId : payload01.RecordTypeId,
+Renewal_Term__c : payload01.Renewal_Term__c as :string when payload01.Renewal_Term__c != null otherwise '' ,
+Renewed_Subscription__c : payload01.Renewed_Subscription__c,
+Sold_To_Contact__c : payload01.Sold_To_Contact__c,
+StageName : payload01.StageName,
+Start_Issue__c : payload01.Start_Issue__c,
+Start_Issues_After__c : payload01.Start_Issues_After__c as :string {format: "yyyy/MM/dd"} when payload01.Start_Issues_After__c != null otherwise '',
+SystemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '',
+TIFF_Number__c : payload01.TIFF_Number__c,
+Term_Type__c : payload01.Term_Type__c,
+Term__c : payload01.Term__c as :string when payload01.Term__c != null otherwise '' ,
+Type : payload01.Type,
+Zuora_Existing_Billing_Account_ID__c : payload01.Zuora_Existing_Billing_Account_ID__c,
+zqu__CurrentGenerators__c : payload01.zqu__CurrentGenerators__c,
+zqu__DeliveryInstallationStatus__c : payload01.zqu__DeliveryInstallationStatus__c,
+zqu__MainCompetitors__c : payload01.zqu__MainCompetitors__c,
+zqu__OrderNumber__c : payload01.zqu__OrderNumber__c,
+zqu__TrackingNumber__c : payload01.zqu__TrackingNumber__c,
+zqu__ZuoraConfig__c : payload01.zqu__ZuoraConfig__c
+
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="ZUORA_SUBSCRIPTION" processingStrategy="synchronous">
+        <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT BAR_Percentage__c,Balance_Amount_Left__c,Base_Subscription_Id__c,Bill_To_Contact__c,Billing_Account_ZuoraId__c,CancellationDateInDateFormat__c,Cancellation_Date__c,ContactPreferredPostalServiceProviderId__c,CreatedById,CreatedDate,CurrencyIsoCode,CustomCancellationDate__c,Custom_Cancellation_Date__c,Default_Payment_Method__c,Digital_Edition__c,Edition__c,Free_Codes__c,Id,IsDeleted,IsExtended__c,Is_Digital_Free__c,Issue_Created__c,LastActivityDate,LastAmendmentType__c,LastModifiedById,LastModifiedDate,LastReferencedDate,LastViewedDate,Name,Offer__c,OpportunityId__c,Opportunity_Source__c,Order_Reference__c,OwnerId,Payment_Method__c,Print_Edition__c,Promo_Code__c,Promotion_20_Digit_Code__c,Promotion_Minimum_Term__c,Publication__c,Quantity__c,QuoteId__c,Quote__c,Reader_Type__c,Ready_For_Suspension__c,SF_BillToCRMId__c,SF_OpportunityId__c,SF_OpportunityIssueId__c,SF_OpportunityOfferId__c,SF_ShipToCRMId__c,SF_Suspend_Subscription_Reason__c,SPCsSyncedFromZuora__c,Ship_To_Contact__c,Sold_To_Contact_Name__c,Sold_To_Contact__c,Subscription_Status__c,Suspend_Resume__c,Suspended__c,SystemModstamp,TIFF_Number__c,Zuora__Account__c,Zuora__AutoRenew__c,Zuora__ContractAcceptanceDate__c,Zuora__ContractEffectiveDate__c,Zuora__CustomerAccount__c,Zuora__External_Id__c,Zuora__InitialTerm__c,Zuora__InvoiceOwner__c,Zuora__MRR__c,Zuora__NextChargeDate__c,Zuora__NextRenewalDate__c,Zuora__Notes__c,Zuora__OriginalCreatedDate__c,Zuora__OriginalCreated_Date__c,Zuora__RenewalTerm__c,Zuora__ServiceActivationDate__c,Zuora__Status__c,Zuora__SubscriptionEndDate__c,Zuora__SubscriptionStartDate__c,Zuora__TCV__c,Zuora__TermEndDate__c,Zuora__TermSettingType__c,Zuora__TermStartDate__c,Zuora__Version__c,Zuora__Zuora_Id__c FROM Zuora__Subscription__c WHERE #[flowVars.criteria]" doc:name="Salesforce"/>
+        <set-variable variableName="recordCount" value="#[(payload!=null?payload.size():0)]" doc:name="Set Records Count"/>
+        <dw:transform-message doc:name="Transform Message" metadata:id="d93b5ca7-6d80-4fd3-8c9f-c7e58ff12adc">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/csv separator=",", quoteValues=true
+---
+payload map ((payload01 , indexOfPayload01) -> {
+BAR_Percentage__c : payload01.BAR_Percentage__c,
+Balance_Amount_Left__c : payload01.Balance_Amount_Left__c,
+Base_Subscription_Id__c : payload01.Base_Subscription_Id__c,
+Bill_To_Contact__c : payload01.Bill_To_Contact__c,
+Billing_Account_ZuoraId__c : payload01.Billing_Account_ZuoraId__c,
+CancellationDateInDateFormat__c : payload01.CancellationDateInDateFormat__c as :string {format: "yyyy/MM/dd"} when payload01.CancellationDateInDateFormat__c != null otherwise '',
+Cancellation_Date__c : payload01.Cancellation_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Cancellation_Date__c != null otherwise '',
+ContactPreferredPostalServiceProviderId__c : payload01.ContactPreferredPostalServiceProviderId__c,
+CreatedById : payload01.CreatedById,
+CreatedDate :  payload01.CreatedDate as :string {format: "yyyy/MM/dd"} when payload01.CreatedDate != null otherwise '',
+CurrencyIsoCode : payload01.CurrencyIsoCode,
+CustomCancellationDate__c : payload01.CustomCancellationDate__c,
+Custom_Cancellation_Date__c : payload01.Custom_Cancellation_Date__c,
+Default_Payment_Method__c : payload01.Default_Payment_Method__c,
+Digital_Edition__c : payload01.Digital_Edition__c as :string when payload01.Digital_Edition__c != null otherwise '' ,
+Edition__c : payload01.Edition__c,
+Free_Codes__c : payload01.Free_Codes__c,
+Id : payload01.Id,
+IsDeleted : payload01.IsDeleted as :string when payload01.IsDeleted != null otherwise '' ,
+IsExtended__c : payload01.IsExtended__c,
+Is_Digital_Free__c : payload01.Is_Digital_Free__c as :string when payload01.Is_Digital_Free__c != null otherwise '' ,
+Issue_Created__c : payload01.Issue_Created__c as :string when payload01.Issue_Created__c != null otherwise '' ,
+LastActivityDate : payload01.LastActivityDate as :string {format: "yyyy/MM/dd"} when payload01.LastActivityDate != null otherwise '',
+LastAmendmentType__c : payload01.LastAmendmentType__c,
+LastModifiedById : payload01.LastModifiedById,
+LastModifiedDate :  payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '' ,
+LastReferencedDate : payload01.LastReferencedDate as :string {format: "yyyy/MM/dd"} when payload01.LastReferencedDate != null otherwise '' ,
+LastViewedDate : payload01.LastViewedDate as :string {format: "yyyy/MM/dd"} when payload01.LastViewedDate != null otherwise '' ,
+Name : payload01.Name,
+Offer__c : payload01.Offer__c,
+OpportunityId__c : payload01.OpportunityId__c,
+Opportunity_Source__c : payload01.Opportunity_Source__c,
+Order_Reference__c : payload01.Order_Reference__c,
+OwnerId : payload01.OwnerId,
+Payment_Method__c : payload01.Payment_Method__c,
+Print_Edition__c : payload01.Print_Edition__c as :string when payload01.Print_Edition__c != null otherwise '' ,
+Promo_Code__c : payload01.Promo_Code__c,
+Promotion_20_Digit_Code__c : payload01.Promotion_20_Digit_Code__c,
+Promotion_Minimum_Term__c : payload01.Promotion_Minimum_Term__c,
+Publication__c : payload01.Publication__c,
+Quantity__c : payload01.Quantity__c as :string when payload01.Quantity__c != null otherwise '' ,
+QuoteId__c : payload01.QuoteId__c,
+Quote__c : payload01.Quote__c,
+Reader_Type__c : payload01.Reader_Type__c,
+Ready_For_Suspension__c : payload01.Ready_For_Suspension__c as :string when payload01.Ready_For_Suspension__c != null otherwise '' ,
+SF_BillToCRMId__c : payload01.SF_BillToCRMId__c,
+SF_OpportunityId__c : payload01.SF_OpportunityId__c,
+SF_OpportunityIssueId__c : payload01.SF_OpportunityIssueId__c,
+SF_OpportunityOfferId__c : payload01.SF_OpportunityOfferId__c,
+SF_ShipToCRMId__c : payload01.SF_ShipToCRMId__c,
+SF_Suspend_Subscription_Reason__c : payload01.SF_Suspend_Subscription_Reason__c,
+SPCsSyncedFromZuora__c : payload01.SPCsSyncedFromZuora__c,
+Ship_To_Contact__c : payload01.Ship_To_Contact__c,
+Sold_To_Contact_Name__c : payload01.Sold_To_Contact_Name__c,
+Sold_To_Contact__c : payload01.Sold_To_Contact__c,
+Subscription_Status__c : payload01.Subscription_Status__c,
+Suspended__c : payload01.Suspended__c,
+SystemModstamp : payload01.SystemModstamp as :string {format: "yyyy/MM/dd"} when payload01.SystemModstamp != null otherwise '' ,
+TIFF_Number__c : payload01.TIFF_Number__c,
+Zuora__Account__c : payload01.Zuora__Account__c,
+Zuora__AutoRenew__c : payload01.Zuora__AutoRenew__c as :string when payload01.Zuora__AutoRenew__c != null otherwise '' ,
+Zuora__ContractAcceptanceDate__c :payload01.Zuora__ContractAcceptanceDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__ContractAcceptanceDate__c != null otherwise '' ,
+Zuora__ContractEffectiveDate__c : payload01.Zuora__ContractEffectiveDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__ContractEffectiveDate__c != null otherwise '' ,
+Zuora__CustomerAccount__c : payload01.Zuora__CustomerAccount__c,
+Zuora__External_Id__c : payload01.Zuora__External_Id__c,
+Zuora__InitialTerm__c : payload01.Zuora__InitialTerm__c,
+Zuora__InvoiceOwner__c : payload01.Zuora__InvoiceOwner__c,
+Zuora__MRR__c : payload01.Zuora__MRR__c,
+Zuora__NextChargeDate__c : payload01.Zuora__NextChargeDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__NextChargeDate__c != null otherwise '' ,
+Zuora__NextRenewalDate__c : payload01.Zuora__NextRenewalDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__NextRenewalDate__c != null otherwise '' ,
+Zuora__Notes__c : payload01.Zuora__Notes__c,
+Zuora__OriginalCreatedDate__c : payload01.Zuora__OriginalCreatedDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__OriginalCreatedDate__c != null otherwise '' ,
+Zuora__OriginalCreated_Date__c : payload01.Zuora__OriginalCreated_Date__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__OriginalCreated_Date__c != null otherwise '' ,
+Zuora__RenewalTerm__c : payload01.Zuora__RenewalTerm__c,
+Zuora__ServiceActivationDate__c : payload01.LastModifiedDate as :string {format: "yyyy/MM/dd"} when payload01.LastModifiedDate != null otherwise '' ,
+Zuora__Status__c : payload01.Zuora__Status__c,
+Zuora__SubscriptionEndDate__c : payload01.Zuora__SubscriptionEndDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__SubscriptionEndDate__c != null otherwise '' ,
+Zuora__SubscriptionStartDate__c : payload01.Zuora__SubscriptionStartDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__SubscriptionStartDate__c != null otherwise '' ,
+Zuora__TCV__c : payload01.Zuora__TCV__c,
+Zuora__TermEndDate__c : payload01.Zuora__TermEndDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__TermEndDate__c != null otherwise '' ,
+Zuora__TermSettingType__c : payload01.Zuora__TermSettingType__c,
+Zuora__TermStartDate__c : payload01.Zuora__TermStartDate__c as :string {format: "yyyy/MM/dd"} when payload01.Zuora__TermStartDate__c != null otherwise '' ,
+Zuora__Version__c :  payload01.Zuora__Version__c as :string when payload01.Zuora__Version__c != null otherwise '' ,
+Zuora__Zuora_Id__c : payload01.Zuora__Zuora_Id__c
+})]]></dw:set-payload>
+        </dw:transform-message>
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <flow name="time-ipc-sfdc_acxiom_saveSFTP" processingStrategy="synchronous">
+        <object-to-byte-array-transformer doc:name="Object to Byte Array"/>
+
+        <encryption:encrypt config-ref="Encryption" doc:name="Encryption" using="PGP_ENCRYPTER"/>
+        <set-variable variableName="sftpAuthMode" value="${sftp.auth.mode}" doc:name="SFTP AUTH MODE"/>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.sftpAuthMode.equals('USER')]">
+                <sftp:outbound-endpoint exchange-pattern="request-response" connector-ref="SFTP_OUTBOUND" outputPattern="test_${app.env}#[app.registry.objectMap.get(flowVars.objectName)]_#[server.dateTime.format('YYYYMMdd')].csv.pgp" host="#[flowVars.vendorDetails.get(0).SFTPServerIP]" port="22" path="#[flowVars.vendorDetails.get(0).SFTPPath]" user="#[flowVars.vendorDetails.get(0).SFTPUsername]" password="#[flowVars.vendorDetails.get(0).formattedPassword]" responseTimeout="10000" doc:name="SFTP"/>
+            </when>
+            <otherwise>
+                <sftp:outbound-endpoint exchange-pattern="request-response" connector-ref="SFTP_OUTBOUND" outputPattern="test_${app.env}#[app.registry.objectMap.get(flowVars.objectName)]_#[server.dateTime.format('YYYYMMdd')].csv.pgp" host="#[flowVars.vendorDetails.get(0).SFTPServerIP]" port="22" path="#[flowVars.vendorDetails.get(0).SFTPPath]" user="#[flowVars.vendorDetails.get(0).SFTPUsername]" responseTimeout="10000" identityFile="${app.home}/classes/encrytion/KEYS/gnupg/axciom_private.ppk" passphrase="${sftp.outbound.password}" doc:name="SFTP with PPK"/>
+            </otherwise>
+        </choice>
+        <choice doc:name="Choice">
+            <when expression="#[flowVars.exceptionOccured==0]">
+                <flow-ref name="update_salesforce_timeStamp" doc:name="Update Salesforce"/>
+                <set-variable variableName="objectMapValue" value="#[app.registry.objectMap.get(flowVars.objectName)]" doc:name="Variable"/>
+                <set-variable variableName="serverDateTime" value="#[server.dateTime.format('YYYYMMdd')]" doc:name="Variable"/>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.to'),
+	cc_adresses__c: p('smtp.error.cc'),
+	Email_Body__c: flowVars.recordCount ++ " records of " ++ flowVars.objectName ++ " exported successfully to Acxiom at " ++ flowVars.currentTS ++ " , " ++ p('app.env') ++ flowVars.objectMapValue ++ "_" ++ flowVars.serverDateTime ++ ".csv.pgp",
+	Email_Subject__c:  "Records Processed successfully for " ++ flowVars.objectName ++ " Export to Acxiom | " ++ flowVars.currentTS
+}]]></dw:set-payload>
+                </dw:transform-message>
+                <sfdc:create-single config-ref="Salesforce__Basic_Authentication" type="Mule_Email__c" doc:name="Salesforce"/>
+            </when>
+            <otherwise>
+                <logger level="INFO" doc:name="Logger"/>
+            </otherwise>
+        </choice>
+        <choice-exception-strategy doc:name="timeinc-acxiomChoice_Exception_Strategy">
+            <catch-exception-strategy when="#[exception.causedBy(java.net.ConnectException)]" doc:name="Connection Exception Strategy">
+                <set-variable variableName="exceptionOccured" value="1" doc:name="Variable"/>
+                <dw:transform-message doc:name="Transform Message" metadata:id="84034f23-121c-451b-a03a-e1d0c88a6e01">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.to'),
+	cc_adresses__c: p('smtp.error.cc'),
+	Email_Body__c: "Cause:Unable to connect SFTP ",
+	Email_Subject__c: "Error occurred while Processing " ++ flowVars.objectName ++ " Export to Acxiom |" ++ flowVars.currentTS
+}]]></dw:set-payload>
+                </dw:transform-message>
+                <sfdc:create-single config-ref="Salesforce__Basic_Authentication" type="Mule_Email__c" doc:name="Salesforce"/>
+            </catch-exception-strategy>
+            <catch-exception-strategy when="#[exception.causedBy(java.io.IOException)]" doc:name="IO Exception Strategy">
+                <set-variable variableName="exceptionOccured" value="1" doc:name="Variable"/>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.to'),
+	cc_adresses__c: p('smtp.error.cc'),
+	Email_Body__c: "Cause:Authentication failed to login  SFTP",
+	Email_Subject__c: "Error occurred while Processing " ++ flowVars.objectName ++ " Export to Acxiom |" ++ flowVars.currentTS	
+}]]></dw:set-payload>
+                </dw:transform-message>
+                <sfdc:create-single config-ref="Salesforce__Basic_Authentication" type="Mule_Email__c" doc:name="Salesforce"/>
+            </catch-exception-strategy>
+            <catch-exception-strategy when="#[exception.causedBy(java.net.UnknownHostException)]" doc:name="UnknownHost Exception Strategy">
+                <set-variable variableName="exceptionOccured" value="1" doc:name="Variable"/>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.to'),
+	cc_adresses__c: p('smtp.error.cc'),
+	Email_Body__c: "Cause:- UnKnown Host Exception",
+	Email_Subject__c: "Error occurred while Processing " ++ flowVars.objectName ++ " Export to Acxiom |" ++ flowVars.currentTS
+}]]></dw:set-payload>
+                </dw:transform-message>
+                <sfdc:create-single config-ref="Salesforce__Basic_Authentication" type="Mule_Email__c" doc:name="Salesforce"/>
+            </catch-exception-strategy>
+            <catch-exception-strategy when="#[exception.causedBy(org.mule.security.encryption.MuleEncryptionException)]" doc:name="Encryption Exception Strategy">
+                <set-variable variableName="exceptionOccured" value="1" doc:name="Variable"/>
+                <dw:transform-message doc:name="Transform Message">
+                    <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.to'),
+	cc_adresses__c: p('smtp.error.cc'),
+	Email_Body__c: "Cause: Crypto Failure – Please check whether PGP keys are loaded to KeyRing",
+	Email_Subject__c: "Error occurred while Processing " ++ flowVars.objectName ++ " Export to Acxiom |" ++ flowVars.currentTS
+}]]></dw:set-payload>
+                </dw:transform-message>
+                <sfdc:create-single config-ref="Salesforce__Basic_Authentication" type="Mule_Email__c" doc:name="Salesforce"/>
+            </catch-exception-strategy>
+        </choice-exception-strategy>
+    </flow>
+    <flow name="update_salesforce_timeStamp" processingStrategy="synchronous">
+        <set-payload value="#[flowVars.AxiomExportDetails]" doc:name="Set Payload"/>
+
+        <dw:transform-message doc:name="Transform Message" metadata:id="836412e1-e2d8-4bcd-92c1-3daee87fb74a">
+            <dw:input-inbound-property propertyName="newExtractDate"/>
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	Id : payload.Id,
+	LastExtractDateTime__c : flowVars.currentTS as :datetime
+}]]></dw:set-payload>
+        </dw:transform-message>
+
+        <sfdc:update-single config-ref="Salesforce__Basic_Authentication" type="AcxiomExportDetails__c" doc:name="Salesforce"/>
+
+        <exception-strategy ref="timeinc-acxiomCatch_Exception_Strategy" doc:name="Reference Exception Strategy"/>
+    </flow>
+    <catch-exception-strategy name="timeinc-acxiomCatch_Exception_Strategy">
+        <set-variable variableName="exceptionOccured" value="1" doc:name="Variable"/>
+        <set-variable variableName="finalException" value="#[groovy:message.getExceptionPayload().getException()]" doc:name="Variable"/>
+        <set-variable variableName="exceptionCause" value="#[groovy:message.getExceptionPayload().getException().getCause()]" doc:name="Variable"/>
+        <dw:transform-message doc:name="Transform Message">
+            <dw:set-payload><![CDATA[%dw 1.0
+%output application/java
+---
+{
+	To_Addresses__c: p('smtp.to'),
+	cc_adresses__c: p('smtp.error.cc'),
+	Email_Body__c: 'Cause: ' + flowVars.exceptionCause + '\n' + 'Details : ' + flowVars.finalException,
+	Email_Subject__c: "Error occurred while Processing " ++ flowVars.objectName ++ " Export to Acxiom |" ++ flowVars.currentTS
+}]]></dw:set-payload>
+        </dw:transform-message>
+        <sfdc:create-single config-ref="Salesforce__Basic_Authentication" type="Mule_Email__c" doc:name="Salesforce"/>
+    </catch-exception-strategy>
+</mule>
