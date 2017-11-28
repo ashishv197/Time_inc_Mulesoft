@@ -34,6 +34,7 @@ http://www.mulesoft.org/schema/mule/sftp http://www.mulesoft.org/schema/mule/sft
             </spring:constructor-arg>
         </spring:bean>
     </spring:beans>
+	
     <encryption:config name="Encryption" defaultEncrypter="PGP_ENCRYPTER" doc:name="Encryption">
         <encryption:pgp-encrypter-config publicKeyRingFileName="${app.home}/classes/encrytion/KEYS/gnupg/pubring.gpg"  secretAliasId="1026862435498891357" principal="Adam Hinchliffe (Version 2) &lt;ahinch@acxiom.com&gt;" secretKeyRingFileName="${app.home}/classes/encrytion/KEYS/gnupg/secring.gpg"/>
     </encryption:config>
